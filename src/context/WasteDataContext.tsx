@@ -49,7 +49,7 @@ interface WasteDataContextType {
   setActiveTab: (tab: ActiveTab) => void;
   preselectedInputKelurahan: KelurahanId | null;
   setPreselectedInputKelurahan: (k: KelurahanId | null) => void;
-  saveDailyRecord: (record: Omit<DailyRecord, 'id' | 'updatedAt'>) => void;
+  saveDailyRecord: (record: Omit<DailyRecord, 'id' | 'updatedAt'>) => Promise<void>;
   addCollector: (collector: Omit<PetugasCollector, 'id'>) => void;
   saveTps3rProcessing: (proc: Tps3rProcessing) => void;
   saveOfficialPengelolaan: (data: OfficialDailyPengelolaan) => void;
@@ -57,6 +57,9 @@ interface WasteDataContextType {
   toastMessage: string | null;
   setToastMessage: (msg: string | null) => void;
   // Google Sheets Sync
+  isSavingToSheets: boolean;
+  lastPushResult: { success: boolean; message: string; isScriptError?: boolean } | null;
+  clearLastPushResult: () => void;
   googleSheetsId: string;
   setGoogleSheetsId: (id: string) => void;
   googleAppsScriptUrl: string;
@@ -163,7 +166,13 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [googleAppsScriptUrl, setGoogleAppsScriptUrl] = useState<string>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.GOOGLE_APPS_SCRIPT_URL);
-      if (saved && saved.trim().length > 0) return saved;
+      if (
+        saved &&
+        saved.trim().length > 0 &&
+        !saved.includes('AKfycbx-H4zOPo3oebIabWu5mL7_bisXHbOANNVaAUGdcCEYAh1j5B4CAde8pIDq8p_st50Suw')
+      ) {
+        return saved;
+      }
     } catch (e) {}
     return DEFAULT_APPS_SCRIPT_URL;
   });
@@ -177,6 +186,14 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isSavingToSheets, setIsSavingToSheets] = useState<boolean>(false);
+  const [lastPushResult, setLastPushResult] = useState<{
+    success: boolean;
+    message: string;
+    isScriptError?: boolean;
+  } | null>(null);
+
+  const clearLastPushResult = () => setLastPushResult(null);
 
   // Sync to localStorage
   useEffect(() => {
@@ -271,7 +288,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
-  const saveDailyRecord = (newRecord: Omit<DailyRecord, 'id' | 'updatedAt'>) => {
+  const saveDailyRecord = async (newRecord: Omit<DailyRecord, 'id' | 'updatedAt'>) => {
     const id = `${newRecord.date}_${newRecord.kelurahanId}`;
     const recordWithMeta: DailyRecord = {
       ...newRecord,
@@ -289,18 +306,34 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return [...prev, recordWithMeta];
     });
 
-    // If Google Apps Script Web App URL is configured, push update in background
     if (googleAppsScriptUrl) {
-      pushRecordToGoogleAppsScript(googleAppsScriptUrl, newRecord)
-        .then((res) => {
-          if (res.success) {
-            console.log('Tersinkronisasi otomatis ke Google Apps Script:', res.message);
-          }
-        })
-        .catch(console.error);
+      setIsSavingToSheets(true);
+      try {
+        const res = await pushRecordToGoogleAppsScript(googleAppsScriptUrl, newRecord);
+        setLastPushResult(res);
+        if (res.success) {
+          setToastMessage(
+            `✅ Data Kelurahan ${newRecord.kelurahanId} berhasil tersimpan di aplikasi dan Google Spreadsheet!`
+          );
+        } else {
+          setToastMessage(
+            `⚠️ Data tersimpan di aplikasi, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`
+          );
+        }
+      } catch (err: any) {
+        const errObj = {
+          success: false,
+          isScriptError: false,
+          message: err?.message || 'Gagal menghubungi server Google Apps Script.',
+        };
+        setLastPushResult(errObj);
+        setToastMessage(`⚠️ Tersimpan lokal, namun gagal menghubungi Google Sheets.`);
+      } finally {
+        setIsSavingToSheets(false);
+      }
+    } else {
+      setToastMessage(`Data harian Kelurahan ${newRecord.kelurahanId} tanggal ${newRecord.date} berhasil disimpan!`);
     }
-
-    setToastMessage(`Data harian Kelurahan ${newRecord.kelurahanId} tanggal ${newRecord.date} berhasil disimpan!`);
   };
 
   const addCollector = (collector: Omit<PetugasCollector, 'id'>) => {
@@ -862,6 +895,9 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         isSyncing,
         syncMessage,
         syncFromGoogleSheets,
+        isSavingToSheets,
+        lastPushResult,
+        clearLastPushResult,
         filteredRecords,
         executiveSummary,
         kelurahanSummaries,

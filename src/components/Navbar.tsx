@@ -30,23 +30,23 @@ export const Navbar: React.FC<NavbarProps> = () => {
   const navItems: { id: ActiveTab; label: string; icon: React.ReactNode }[] = [
     {
       id: 'dashboard',
-      label: 'Dashboard Eksekutif',
+      label: 'Dashboard',
       icon: <LayoutDashboard className="w-4 h-4" />,
     },
     {
-      id: 'official-format',
-      label: 'Rekap Harian Resmi (WA)',
-      icon: <FileText className="w-4 h-4" />,
-    },
-    {
       id: 'input',
-      label: 'Input Data Kelurahan',
+      label: 'Input Data',
       icon: <FileSpreadsheet className="w-4 h-4" />,
     },
     {
       id: 'table',
-      label: 'Tabel Rekapitulasi Harian',
+      label: 'Rekapitulasi Harian',
       icon: <TableProperties className="w-4 h-4" />,
+    },
+     {
+      id: 'official-format',
+      label: 'Laporan',
+      icon: <FileText className="w-4 h-4" />,
     },
   ];
 

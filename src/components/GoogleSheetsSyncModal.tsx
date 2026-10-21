@@ -21,6 +21,7 @@ import {
   DEFAULT_APPS_SCRIPT_URL,
   fetchGoogleSheetsRecords,
   testAppsScriptConnection,
+  sendTestRecordToGoogleSheets,
 } from '../utils/googleSheetsSync';
 
 interface GoogleSheetsSyncModalProps {
@@ -46,7 +47,13 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({ is
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
-    status: 'active' | 'missing_doget' | 'unreachable';
+    status: 'active' | 'reference_error' | 'missing_doget' | 'unreachable';
+    message: string;
+  } | null>(null);
+
+  const [isTestingWrite, setIsTestingWrite] = useState<boolean>(false);
+  const [writeTestResult, setWriteTestResult] = useState<{
+    success: boolean;
     message: string;
   } | null>(null);
 
@@ -84,6 +91,24 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({ is
       });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const handleTestWrite = async () => {
+    const url = (tempScriptUrl || googleAppsScriptUrl || '').trim();
+    if (!url) return;
+    setIsTestingWrite(true);
+    setWriteTestResult(null);
+    try {
+      const res = await sendTestRecordToGoogleSheets(url);
+      setWriteTestResult(res);
+    } catch (err: any) {
+      setWriteTestResult({
+        success: false,
+        message: err?.message || 'Gagal mengirim data uji coba ke Spreadsheet.',
+      });
+    } finally {
+      setIsTestingWrite(false);
     }
   };
 
@@ -266,6 +291,17 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({ is
                         <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
                         <span>{isTesting ? 'Menguji...' : 'Uji Koneksi'}</span>
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={handleTestWrite}
+                        disabled={isTestingWrite}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-teal-700 hover:bg-teal-800 text-white font-semibold text-xs rounded-lg transition-colors whitespace-nowrap disabled:opacity-50"
+                        title="Kirim 1 baris data uji coba langsung ke sheet INPUT_HARIAN"
+                      >
+                        <Send className={`w-3.5 h-3.5 ${isTestingWrite ? 'animate-spin' : ''}`} />
+                        <span>{isTestingWrite ? 'Mengirim...' : 'Tes Tulis 1 Baris ke Sheet'}</span>
+                      </button>
                     </div>
                   </div>
 
@@ -275,43 +311,124 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({ is
                       onClick={() => setTempScriptUrl(DEFAULT_APPS_SCRIPT_URL)}
                       className="text-[11px] text-emerald-700 hover:underline flex items-center gap-1"
                     >
-                      <span>Gunakan URL Pengguna:</span>
+                      <span>Kembalikan ke URL Aktif Default:</span>
                       <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">
-                        AKfycbx-H4zOPo3oebIabWu5mL7_bisXHbOANNVaAUGdcCEYAh1j5B4CAde8pIDq8p_st50Suw
+                        AKfycbwF_30eYsRZDUBSXB3DNB4ByWsRPaHyz8N4tziyRaVqvdv0gkLDH1KhiTO8cWvljMlPcw
                       </code>
                     </button>
                   )}
                 </form>
 
-                {/* Connection Test Diagnostic Banner */}
-                {testResult && (
+                {/* Direct Write Test Result Banner */}
+                {writeTestResult && (
                   <div
-                    className={`p-3.5 rounded-xl border text-xs space-y-1 ${
-                      testResult.status === 'active'
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                        : testResult.status === 'missing_doget'
-                        ? 'bg-amber-50 border-amber-300 text-amber-900'
-                        : 'bg-rose-50 border-rose-300 text-rose-900'
+                    className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
+                      writeTestResult.success
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                        : 'bg-rose-50 border-rose-300 text-rose-950'
                     }`}
                   >
                     <div className="flex items-center gap-2 font-bold">
-                      {testResult.status === 'active' ? (
+                      {writeTestResult.success ? (
                         <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
                       ) : (
-                        <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                        <AlertCircle className="w-4 h-4 text-rose-700 shrink-0" />
                       )}
                       <span>
-                        {testResult.status === 'active'
-                          ? 'Koneksi Berhasil!'
-                          : testResult.status === 'missing_doget'
-                          ? 'Perlu Memperbarui Kode di Apps Script Editor'
-                          : 'Koneksi Gagal'}
+                        {writeTestResult.success
+                          ? 'Tes Tulis Berhasil! Data Masuk ke Google Spreadsheet!'
+                          : 'Tes Tulis Gagal: Data Belum Masuk ke Spreadsheet'}
                       </span>
                     </div>
-                    <p className="text-[11px] leading-relaxed pl-6">{testResult.message}</p>
+                    <p className="text-[11px] leading-relaxed pl-6">{writeTestResult.message}</p>
+                    {writeTestResult.success && (
+                      <div className="pl-6 pt-1">
+                        <a
+                          href={spreadsheetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-emerald-700 font-bold underline hover:text-emerald-900"
+                        >
+                          <span>Buka Google Spreadsheet untuk Memeriksa Baris Baru</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Connection Test Diagnostic Banner */}
+                {testResult && (
+                  <div
+                    className={`p-4 rounded-xl border text-xs space-y-2 ${
+                      testResult.status === 'active'
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                        : testResult.status === 'reference_error'
+                        ? 'bg-rose-50 border-2 border-rose-400 text-rose-950'
+                        : testResult.status === 'missing_doget'
+                        ? 'bg-amber-50 border-amber-300 text-amber-950'
+                        : 'bg-rose-50 border-rose-300 text-rose-950'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5 font-bold">
+                      {testResult.status === 'active' ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      )}
+                      <div>
+                        <span className="block text-sm">
+                          {testResult.status === 'active'
+                            ? 'Koneksi Berhasil & Siap Simpan!'
+                            : testResult.status === 'reference_error'
+                            ? 'Penyebab Terdeteksi: Kode di Google Apps Script Terpotong (ReferenceError)'
+                            : testResult.status === 'missing_doget'
+                            ? 'Fungsi doGet/doPost Belum Dideploy di Versi Baru'
+                            : 'Koneksi ke Google Apps Script Gagal'}
+                        </span>
+                        <p className="text-[11px] font-normal leading-relaxed mt-1">{testResult.message}</p>
+                      </div>
+                    </div>
+
+                    {testResult.status === 'reference_error' && (
+                      <div className="bg-white/90 rounded-lg p-3 border border-rose-200 text-[11px] space-y-2 mt-2">
+                        <strong className="text-slate-900 block font-semibold">
+                          Cara Memperbaiki Agar Update & Tambah Data Masuk ke Spreadsheet:
+                        </strong>
+                        <ol className="list-decimal list-inside space-y-1 text-slate-700">
+                          <li>Klik tombol <strong>"Salin Seluruh Kode Baru"</strong> di bawah.</li>
+                          <li>Buka Google Spreadsheet &gt; menu <strong>Ekstensi &gt; Apps Script</strong>.</li>
+                          <li>Hapus SEMUA baris di file <code>Kode.gs</code> lama, lalu <strong>Paste/Tempel</strong> seluruh kode baru.</li>
+                          <li>Tekan <strong>Ctrl + S</strong> (Simpan).</li>
+                          <li>
+                            Klik tombol biru <strong>Terapkan (Deploy)</strong> &gt; pilih <strong>Kelola deployment</strong> &gt; klik <strong>ikon Pensil (Edit)</strong> &gt; ubah Versi menjadi <strong>Versi baru (New version)</strong> &gt; klik <strong>Terapkan</strong>.
+                          </li>
+                        </ol>
+                        <div className="pt-1 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCopyCode}
+                            className="px-3.5 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded font-bold text-xs flex items-center gap-1.5 transition-colors"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>{copiedCode ? 'Seluruh Kode Tersalin!' : 'Salin Seluruh Kode Lengkap (324 Baris)'}</span>
+                          </button>
+                          <a
+                            href={spreadsheetUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 rounded font-semibold text-xs text-slate-800 flex items-center gap-1"
+                          >
+                            <span>Buka Google Spreadsheet Saya</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
                     {testResult.status === 'missing_doget' && (
                       <div className="pl-6 pt-1 text-[11px] text-amber-800">
-                        <strong>Langkah Cepat Memperbaiki:</strong> Buka spreadsheet Anda &gt; menu{' '}
+                        <strong>Langkah Perbaikan:</strong> Buka spreadsheet Anda &gt; menu{' '}
                         <strong>Ekstensi &gt; Apps Script</strong> &gt; tempel kode dari tab{' '}
                         <button
                           onClick={() => setActiveTab('code')}
@@ -326,11 +443,11 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({ is
                   </div>
                 )}
 
-                {googleAppsScriptUrl && !testResult && (
+                {googleAppsScriptUrl && !testResult && !writeTestResult && (
                   <div className="flex items-center gap-2 text-xs text-emerald-800 bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
-                      URL Web App aktif. Setiap kali Anda menekan simpan pada portal input kelurahan, data akan terkirim ke spreadsheet Anda.
+                      URL Web App aktif. Klik tombol <strong>"Tes Tulis 1 Baris ke Sheet"</strong> di atas untuk memverifikasi apakah penulisan ke Google Spreadsheet Anda berjalan normal.
                     </span>
                   </div>
                 )}
@@ -344,10 +461,10 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({ is
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
                 <div>
                   <h4 className="text-sm font-bold text-slate-900">
-                    Kode Google Apps Script SIPESAT (Siap Tempel)
+                    Kode Google Apps Script SAPU-UP (Lengkap 324 Baris - Siap Tempel)
                   </h4>
                   <p className="text-xs text-slate-500">
-                    Buka Spreadsheet &gt; menu <strong>Ekstensi &gt; Apps Script</strong>, hapus kode lama, lalu tempel kode berikut:
+                    Buka Spreadsheet &gt; menu <strong>Ekstensi &gt; Apps Script</strong>, hapus <strong>SEMUA</strong> kode lama di <code>Kode.gs</code>, lalu tempel seluruh kode berikut:
                   </p>
                 </div>
 

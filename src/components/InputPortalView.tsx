@@ -38,6 +38,8 @@ export const InputPortalView: React.FC = () => {
     googleSheetsId,
     syncFromGoogleSheets,
     isSyncing,
+    isSavingToSheets,
+    lastPushResult,
   } = useWasteData();
 
   // Selected date and kelurahan
@@ -678,11 +680,52 @@ export const InputPortalView: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-lg shadow-xs transition-colors text-xs"
+                  disabled={isSavingToSheets}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white font-semibold rounded-lg shadow-xs transition-colors text-xs"
                 >
-                  <Save className="w-4 h-4" />
-                  <span>Simpan & Kirim Laporan</span>
+                  {isSavingToSheets ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-emerald-200" />
+                      <span>Menyimpan ke Web & Spreadsheet...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Simpan & Kirim Laporan</span>
+                    </>
+                  )}
                 </button>
+
+                {lastPushResult && !lastPushResult.success && (
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-950 space-y-2 animate-in fade-in">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block text-amber-900">
+                          Tersimpan di Web, Belum Masuk ke Spreadsheet
+                        </span>
+                        <p className="text-[11px] text-amber-800 leading-relaxed mt-0.5">
+                          {lastPushResult.message}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsSyncModalOpen(true)}
+                      className="w-full py-1.5 px-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                    >
+                      <Code2 className="w-3.5 h-3.5" />
+                      <span>Buka Solusi Perbaikan Script Google Sheets</span>
+                    </button>
+                  </div>
+                )}
+
+                {lastPushResult && lastPushResult.success && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-lg text-xs text-emerald-900 flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="text-[11px] font-semibold">{lastPushResult.message}</span>
+                  </div>
+                )}
 
                 <button
                   type="button"

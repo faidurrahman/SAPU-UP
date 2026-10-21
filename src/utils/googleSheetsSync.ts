@@ -3,7 +3,7 @@ import { KELURAHAN_LIST } from '../data/initialData';
 
 export const DEFAULT_SPREADSHEET_ID = '1NU5cVMjCR0tQuzFZjMZxh56X6ouzsJqahROiPKzXl2s';
 export const DEFAULT_APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbx-H4zOPo3oebIabWu5mL7_bisXHbOANNVaAUGdcCEYAh1j5B4CAde8pIDq8p_st50Suw/exec';
+  'https://script.google.com/macros/s/AKfycbwF_30eYsRZDUBSXB3DNB4ByWsRPaHyz8N4tziyRaVqvdv0gkLDH1KhiTO8cWvljMlPcw/exec';
 
 /**
  * Robust CSV parser handling quotes and commas
@@ -171,7 +171,7 @@ export async function pushRecordToGoogleAppsScript(
     pakanInputs: PakanCollectorInput[];
     submittedBy?: string;
   }
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; isScriptError?: boolean; details?: string }> {
   if (!scriptUrl || scriptUrl.trim().length === 0) {
     return {
       success: false,
@@ -194,51 +194,89 @@ export async function pushRecordToGoogleAppsScript(
       body: payload,
     });
 
-    try {
-      const result = await response.json();
+    const responseText = await response.text();
+
+    // Check for Google Apps Script HTML error output
+    if (
+      responseText.includes('ReferenceError') ||
+      responseText.includes('jsonResponse is not defined') ||
+      responseText.includes('找不到以下指令碼函式') ||
+      responseText.includes('Script function not found') ||
+      responseText.includes('<title>錯誤</title>') ||
+      responseText.includes('<title>Error</title>') ||
+      responseText.includes('Exception:')
+    ) {
+      if (
+        responseText.includes('jsonResponse is not defined') ||
+        responseText.includes('ReferenceError')
+      ) {
+        return {
+          success: false,
+          isScriptError: true,
+          message:
+            'Google Apps Script Error: "ReferenceError: jsonResponse is not defined". Kode di Google Apps Script Anda terpotong (hanya sampai baris 92). Harap salin seluruh kode (324 baris) lalu buat "Versi Baru" pada deployment.',
+        };
+      }
+
+      if (
+        responseText.includes('找不到以下指令碼函式') ||
+        responseText.includes('Script function not found') ||
+        responseText.includes('doPost')
+      ) {
+        return {
+          success: false,
+          isScriptError: true,
+          message:
+            'Fungsi doPost belum terpasang di deployment aktif Google Apps Script. Harap perbarui deployment ke Versi Baru.',
+        };
+      }
+
       return {
-        success: result.status === 'success' || result.success === true,
-        message: result.message || 'Data berhasil dikirim ke Google Sheets',
+        success: false,
+        isScriptError: true,
+        message: 'Google Apps Script mengembalikan pesan error saat memproses penyimpanan.',
       };
+    }
+
+    try {
+      const result = JSON.parse(responseText);
+      if (result.status === 'success' || result.success === true) {
+        return {
+          success: true,
+          message: result.message || 'Data berhasil dikirim dan tersimpan di sheet INPUT_HARIAN Google Spreadsheet!',
+        };
+      } else {
+        return {
+          success: false,
+          message: result.message || 'Google Apps Script menolak penulisan data.',
+        };
+      }
     } catch {
-      // Successful HTTP call but couldn't parse JSON (e.g. redirected)
+      // If HTTP 200 returned without error signature
       return {
         success: true,
         message: 'Data berhasil terkirim ke Google Apps Script.',
       };
     }
   } catch (err: any) {
-    console.warn('Standard POST failed, retrying with mode no-cors...', err);
-    try {
-      // Fallback: send with no-cors so browser will not block redirect
-      await fetch(scriptUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: payload,
-      });
-      return {
-        success: true,
-        message: 'Data terkirim ke Google Apps Script (mode no-cors).',
-      };
-    } catch (fallbackErr: any) {
-      console.error('Error pushing to Apps Script:', fallbackErr);
-      return {
-        success: false,
-        message: fallbackErr.message || 'Gagal mengirim data ke Google Apps Script',
-      };
-    }
+    console.error('Error pushing to Apps Script:', err);
+    return {
+      success: false,
+      message: err?.message || 'Gagal menghubungi Google Apps Script.',
+    };
   }
 }
 
 /**
- * Test connectivity with Google Apps Script Web App
+ * Test connectivity with Google Apps Script Web App (Checks both GET and POST)
  */
 export async function testAppsScriptConnection(
   scriptUrl: string
-): Promise<{ success: boolean; status: 'active' | 'missing_doget' | 'unreachable'; message: string }> {
+): Promise<{
+  success: boolean;
+  status: 'active' | 'reference_error' | 'missing_doget' | 'unreachable';
+  message: string;
+}> {
   if (!scriptUrl || !scriptUrl.startsWith('https://script.google.com/macros/s/')) {
     return {
       success: false,
@@ -248,17 +286,50 @@ export async function testAppsScriptConnection(
   }
 
   try {
+    // 1. Test POST endpoint
+    try {
+      const postRes = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify({ action: 'ping' }),
+      });
+      const postText = await postRes.text();
+
+      if (postText.includes('ReferenceError') || postText.includes('jsonResponse is not defined')) {
+        return {
+          success: false,
+          status: 'reference_error',
+          message:
+            'MASALAH TERDETEKSI: Kode di editor Google Sheets Anda terpotong (ReferenceError: jsonResponse is not defined di baris 92). Fungsi jsonResponse dan doPost belum ada di script Anda. Silakan salin ulang seluruh kode lalu Deploy Versi Baru.',
+        };
+      }
+    } catch (e) {
+      console.warn('POST pre-test caught error:', e);
+    }
+
+    // 2. Test GET endpoint
     const res = await fetch(`${scriptUrl}?action=getAll`, {
       method: 'GET',
     });
 
     const text = await res.text();
 
+    if (text.includes('ReferenceError') || text.includes('jsonResponse is not defined')) {
+      return {
+        success: false,
+        status: 'reference_error',
+        message:
+          'MASALAH TERDETEKSI: Kode di Google Sheets Anda menghasilkan "ReferenceError: jsonResponse is not defined". Harap salin seluruh kode (324 baris) lalu buat "Versi Baru" pada deployment.',
+      };
+    }
+
     if (text.includes('doGet') || text.includes('找不到以下指令碼函式') || text.includes('Script function not found')) {
       return {
         success: false,
         status: 'missing_doget',
-        message: 'Web App terhubung, namun fungsi doGet belum ditemukan di script editor Anda.',
+        message: 'Web App terhubung, namun fungsi doGet belum aktif di versi deployment Anda.',
       };
     }
 
@@ -268,7 +339,7 @@ export async function testAppsScriptConnection(
         return {
           success: true,
           status: 'active',
-          message: `Koneksi Berhasil! API aktif dengan ${data.totalRecords ?? data.records?.length ?? 0} data.`,
+          message: `Koneksi Sempurna! Web App aktif dan siap menerima data input (${data.totalRecords ?? data.records?.length ?? 0} data terbaca).`,
         };
       }
     } catch {}
@@ -282,7 +353,35 @@ export async function testAppsScriptConnection(
     return {
       success: false,
       status: 'unreachable',
-      message: 'Tidak dapat menjangkau Web App. Periksa izin akses (Anyone/Siapa Saja) pada deployment.',
+      message: 'Tidak dapat menjangkau Web App. Periksa izin akses (Anyone / Siapa Saja) pada deployment Google Apps Script Anda.',
     };
   }
+}
+
+/**
+ * Uji coba langsung kirim 1 baris data tes ke Google Spreadsheet
+ */
+export async function sendTestRecordToGoogleSheets(scriptUrl: string) {
+  return pushRecordToGoogleAppsScript(scriptUrl, {
+    date: '2026-10-21',
+    kelurahanId: 'BARU',
+    composition: {
+      makananTpa: 170,
+      makananTps3r: 760,
+      sisaBuahTpa: 0,
+      sisaBuahTps3r: 0,
+      sisaSayurTpa: 0,
+      sisaSayurTps3r: 0,
+      daunTpa: 0,
+      daunTps3r: 0,
+    },
+    pakanInputs: [
+      {
+        collectorId: 'col-test',
+        collectorName: 'Uji Coba Sistem',
+        weightKg: 45,
+      },
+    ],
+    submittedBy: 'Uji Coba Web SAPU-UP',
+  });
 }

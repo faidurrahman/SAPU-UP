@@ -250,82 +250,7 @@ export const InputPortalView: React.FC = () => {
         </div>
       </ScrollReveal>
 
-      {/* Download Spreadsheet Template Card for Daily Input */}
-      <ScrollReveal delay={100} distance={28} duration={700}>
-        <div className="bg-gradient-to-br from-emerald-900 via-teal-900 to-slate-900 text-white rounded-2xl p-6 shadow-md hover:shadow-2xl hover:-translate-y-1.5 hover:border-emerald-500/70 transition-all duration-300 ease-out border border-emerald-700/40">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-            <div className="space-y-2 max-w-2xl">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>File Excel (.xlsx) Siap Pakai Untuk Google Sheets / Excel</span>
-            </div>
-            <h3 className="text-lg sm:text-xl font-bold tracking-tight">
-              File Spreadsheet Siap Import untuk Input Harian
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              File ini berisi <strong>6 sheet lengkap</strong> dengan rumus otomatis (<code className="bg-black/30 px-1 py-0.5 rounded text-emerald-200">=SUM</code>), 210 baris data resmi Oktober 2026, baris kosong siap ketik untuk kelurahan, serta sheet rekap harian format WhatsApp.
-            </p>
-            <div className="pt-2 flex flex-wrap gap-2 text-[11px] text-slate-300">
-              <span className="bg-white/10 px-2 py-1 rounded">✓ Sheet INPUT_HARIAN</span>
-              <span className="bg-white/10 px-2 py-1 rounded">✓ Sheet REKAP_HARIAN_RESMI</span>
-              <span className="bg-white/10 px-2 py-1 rounded">✓ Sheet REKAP_MATRIKS_BULANAN</span>
-              <span className="bg-white/10 px-2 py-1 rounded">✓ Sheet PENGOLAHAN_TPS3R</span>
-              <span className="bg-white/10 px-2 py-1 rounded">✓ Sheet MASTER_DATA</span>
-            </div>
-          </div>
 
-          <div className="flex flex-col sm:flex-row lg:flex-col gap-2.5 shrink-0">
-            <button
-              onClick={exportToExcel}
-              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md transition-all duration-150 transform active:scale-95"
-            >
-              <Download className="w-4 h-4" />
-              <span>Unduh File Excel (.xlsx)</span>
-            </button>
-            <a
-              href={`https://docs.google.com/spreadsheets/d/${googleSheetsId}/edit`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600/70 hover:bg-emerald-600 text-white font-semibold text-xs transition-colors border border-emerald-500/50 text-center"
-            >
-              <span>Buka Google Sheet Saya</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-            <button
-              onClick={syncFromGoogleSheets}
-              disabled={isSyncing}
-              className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-emerald-200 font-medium text-xs transition-colors border border-white/10 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Menyinkronkan...' : 'Tarik Data dari Sheet'}</span>
-            </button>
-            <button
-              onClick={() => setIsSyncModalOpen(true)}
-              className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white font-semibold text-xs transition-colors border border-white/20"
-            >
-              <Code2 className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Sinkron & Kode Apps Script</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Step-by-step import guide */}
-        <div className="mt-5 pt-4 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-300">
-          <div className="flex gap-2">
-            <span className="w-5 h-5 rounded-full bg-emerald-500/30 text-emerald-300 flex items-center justify-center font-bold text-[11px] shrink-0">1</span>
-            <span>Buka <strong>drive.google.com</strong>, klik <em>+ Baru</em> &gt; <em>Upload File</em>, lalu pilih file .xlsx ini.</span>
-          </div>
-          <div className="flex gap-2">
-            <span className="w-5 h-5 rounded-full bg-emerald-500/30 text-emerald-300 flex items-center justify-center font-bold text-[11px] shrink-0">2</span>
-            <span>Buka file yang terunggah, lalu klik menu <em>File &gt; Simpan sebagai Google Spreadsheet</em>.</span>
-          </div>
-          <div className="flex gap-2">
-            <span className="w-5 h-5 rounded-full bg-emerald-500/30 text-emerald-300 flex items-center justify-center font-bold text-[11px] shrink-0">3</span>
-            <span>Bagikan link ke staf 10 Kelurahan untuk mulai menginput data harian dengan rumus otomatis!</span>
-          </div>
-        </div>
-      </div>
-      </ScrollReveal>
 
       {/* Main 2-Column Form & Preview Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -720,12 +645,6 @@ export const InputPortalView: React.FC = () => {
                   </div>
                 )}
 
-                {lastPushResult && lastPushResult.success && (
-                  <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-lg text-xs text-emerald-900 flex items-center gap-2 animate-in fade-in">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span className="text-[11px] font-semibold">{lastPushResult.message}</span>
-                  </div>
-                )}
 
                 <button
                   type="button"

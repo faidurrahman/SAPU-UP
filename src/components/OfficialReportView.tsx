@@ -213,24 +213,6 @@ export const OfficialReportView: React.FC = () => {
                   )}
                 </button>
 
-                <button
-                  onClick={handleShareWhatsApp}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-800/80 hover:bg-emerald-700 text-emerald-100 transition-colors border border-emerald-700"
-                  title="Buka langsung di WhatsApp"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Kirim ke WA</span>
-                </button>
-
-                <button
-                  onClick={() => setIsSyncModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-900/90 hover:bg-emerald-800 text-emerald-200 transition-colors border border-emerald-600/70 shadow-2xs"
-                  title="Sinkronisasi data langsung dengan Google Sheets"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>Sinkron Spreadsheet</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                </button>
 
                 <button
                   onClick={exportToExcel}

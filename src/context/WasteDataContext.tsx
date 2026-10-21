@@ -312,9 +312,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const res = await pushRecordToGoogleAppsScript(googleAppsScriptUrl, newRecord);
         setLastPushResult(res);
         if (res.success) {
-          setToastMessage(
-            `✅ Data Kelurahan ${newRecord.kelurahanId} berhasil tersimpan di aplikasi dan Google Spreadsheet!`
-          );
+          setToastMessage(`✅ Data Kelurahan ${newRecord.kelurahanId} berhasil tersimpan!`);
         } else {
           setToastMessage(
             `⚠️ Data tersimpan di aplikasi, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`

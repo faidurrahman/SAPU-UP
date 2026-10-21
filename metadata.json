@@ -1,0 +1,6 @@
+{
+  "name": "SAPU-UP - Sistem Aplikasi Persampahan Ujung Pandang",
+  "description": "SAPU-UP (Sistem Aplikasi Persampahan Ujung Pandang) - Sistem Informasi & Dashboard Pengelolaan Sampah Harian Kecamatan Ujung Pandang, Kota Makassar",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useWasteData } from '../context/WasteDataContext';
 import { KELURAHAN_LIST } from '../data/initialData';
+import { FULL_APPS_SCRIPT_CODE, DEFAULT_SPREADSHEET_ID } from '../utils/googleSheetsSync';
 import {
   FileSpreadsheet,
   Download,
@@ -10,6 +11,7 @@ import {
   Layers,
   Copy,
   Info,
+  Code2,
 } from 'lucide-react';
 
 interface SpreadsheetGuideModalProps {
@@ -19,12 +21,12 @@ interface SpreadsheetGuideModalProps {
 
 export const SpreadsheetGuideModal: React.FC<SpreadsheetGuideModalProps> = ({ isOpen, onClose }) => {
   const { collectors, filteredRecords, exportToExcel } = useWasteData();
-  const [activeTab, setActiveTab] = useState<'sheets' | 'formulas' | 'templates'>('sheets');
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'sheets' | 'formulas' | 'templates' | 'appscript'>('sheets');
+  const [copiedIndex, setCopiedIndex] = useState<number | string | null>(null);
 
   if (!isOpen) return null;
 
-  const copyText = (text: string, index: number) => {
+  const copyText = (text: string, index: number | string) => {
     navigator.clipboard.writeText(text);
     setCopiedIndex(index);
     setTimeout(() => setCopiedIndex(null), 2000);
@@ -255,6 +257,17 @@ export const SpreadsheetGuideModal: React.FC<SpreadsheetGuideModalProps> = ({ is
           >
             3. Unduh Template CSV Siap Pakai
           </button>
+          <button
+            onClick={() => setActiveTab('appscript')}
+            className={`pb-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 ${
+              activeTab === 'appscript'
+                ? 'border-emerald-600 text-emerald-800 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Code2 className="w-3.5 h-3.5" />
+            <span>4. Kode Google Apps Script (Code.gs)</span>
+          </button>
         </div>
 
         {/* Modal Body */}
@@ -429,6 +442,70 @@ export const SpreadsheetGuideModal: React.FC<SpreadsheetGuideModalProps> = ({ is
                     <span>Unduh Master Data & Petugas</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'appscript' && (
+            <div className="space-y-4">
+              <div className="p-4 bg-slate-900 text-white rounded-xl space-y-2 border border-slate-700">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Code2 className="w-5 h-5 text-emerald-400" />
+                    <h4 className="font-bold text-sm text-white">
+                      Kode Google Apps Script (Code.gs) Terbaru
+                    </h4>
+                  </div>
+                  <button
+                    onClick={() => copyText(FULL_APPS_SCRIPT_CODE, 'gas_code')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
+                  >
+                    {copiedIndex === 'gas_code' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Kode Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Salin Seluruh Kode</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Spreadsheet ID Target:{' '}
+                  <code className="bg-slate-800 text-emerald-300 px-2 py-0.5 rounded font-mono font-bold">
+                    {DEFAULT_SPREADSHEET_ID}
+                  </code>
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Kode di bawah ini mendukung operasi Read (doGet), Add (doPost), dan Edit data secara real-time untuk 4 kategori data: Organik, Anorganik Satgas, Residu TPA, dan Horeka 147.
+                </p>
+              </div>
+
+              <div className="relative">
+                <textarea
+                  readOnly
+                  rows={14}
+                  value={FULL_APPS_SCRIPT_CODE}
+                  className="w-full bg-slate-950 text-emerald-300 font-mono text-xs p-4 rounded-xl border border-slate-800 focus:outline-none select-all"
+                />
+              </div>
+
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2 text-xs text-emerald-950">
+                <strong className="font-bold text-sm text-emerald-900 block">
+                  Langkah-Langkah Pasang di Google Sheets:
+                </strong>
+                <ol className="list-decimal list-inside space-y-1 text-emerald-900/90 font-medium">
+                  <li>Buka Google Sheets Anda (ID: <code className="bg-emerald-100 font-mono text-emerald-900 px-1 rounded">{DEFAULT_SPREADSHEET_ID}</code>).</li>
+                  <li>Klik menu <strong>Ekstensi (Extensions)</strong> &rarr; <strong>Apps Script</strong>.</li>
+                  <li>Hapus seluruh isi <code className="font-mono">Code.gs</code> lama, lalu tempel kode di atas.</li>
+                  <li>Klik tombol <strong>Simpan (Save / Ctrl+S)</strong>.</li>
+                  <li>Klik <strong>Terapkan (Deploy)</strong> &rarr; <strong>Penerapan Baru (New deployment)</strong>.</li>
+                  <li>Pilih Jenis: <strong>Aplikasi Web (Web app)</strong>. Jalankan sebagai: <strong>Saya (Me)</strong>. Siapa yang memiliki akses: <strong>Siapa saja (Anyone)</strong>.</li>
+                  <li>Klik <strong>Terapkan (Deploy)</strong>, berikan otorisasi, lalu salin URL Web App yang muncul ke dalam pengaturan Web App SIPESAT!</li>
+                </ol>
               </div>
             </div>
           )}

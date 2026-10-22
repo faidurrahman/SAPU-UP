@@ -36,16 +36,16 @@ export const Navbar: React.FC<NavbarProps> = () => {
     {
       id: 'input',
       label: 'Input Data',
-      icon: <FileSpreadsheet className="w-4 h-4" />,
+      icon: <PlusCircle className="w-4 h-4" />,
     },
     {
       id: 'table',
-      label: 'Rekapitulasi Harian',
+      label: 'Rekapitulasi',
       icon: <TableProperties className="w-4 h-4" />,
     },
     {
       id: 'official-format',
-      label: 'Laporan',
+      label: 'Laporan WA',
       icon: <FileText className="w-4 h-4" />,
     },
   ];

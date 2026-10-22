@@ -1,21 +1,37 @@
 import * as XLSX from 'xlsx';
 import { DailyRecord, PetugasCollector, Tps3rProcessing } from '../types/waste';
 import { KELURAHAN_LIST } from '../data/initialData';
+import { HOREKA_BUSINESSES, generateInitialHorekaRecords, HorekaDailyRecord } from '../data/horekaData';
+import { generateInitialAnorganikDailyRecords, AnorganikDailyRecord } from '../data/anorganikData';
+import { generateInitialResiduRecords, ResiduRecord } from '../data/residuData';
 
 export function generateAndDownloadExcel(
   records: DailyRecord[],
   collectors: PetugasCollector[],
   tps3rProcessing: Tps3rProcessing[],
+  residuRecords?: ResiduRecord[],
+  anorganikDailyRecords?: AnorganikDailyRecord[],
+  horekaDailyRecords?: HorekaDailyRecord[],
   filename = 'Template_Pengelolaan_Sampah_Kecamatan_Ujung_Pandang.xlsx'
 ) {
-  const wb = createFullWasteWorkbook(records, collectors, tps3rProcessing);
+  const wb = createFullWasteWorkbook(
+    records,
+    collectors,
+    tps3rProcessing,
+    residuRecords || generateInitialResiduRecords(),
+    anorganikDailyRecords || generateInitialAnorganikDailyRecords(),
+    horekaDailyRecords || generateInitialHorekaRecords()
+  );
   XLSX.writeFile(wb, filename);
 }
 
 export function createFullWasteWorkbook(
   records: DailyRecord[],
   collectors: PetugasCollector[],
-  tps3rProcessing: Tps3rProcessing[]
+  tps3rProcessing: Tps3rProcessing[],
+  residuRecords: ResiduRecord[] = generateInitialResiduRecords(),
+  anorganikDailyRecords: AnorganikDailyRecord[] = generateInitialAnorganikDailyRecords(),
+  horekaDailyRecords: HorekaDailyRecord[] = generateInitialHorekaRecords()
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
 
@@ -425,7 +441,76 @@ export function createFullWasteWorkbook(
   XLSX.utils.book_append_sheet(wb, ws5, 'PENGOLAHAN_TPS3R');
 
   // ==========================================
-  // SHEET 6: MASTER_DATA
+  // SHEET 6: REKAP_ANORGANIK
+  // ==========================================
+  const anorganikRows = anorganikDailyRecords.map((r) => ({
+    Tanggal: r.date,
+    Kelurahan: r.kelurahanId,
+    Satgas_Mobil_Kg: r.satgasMobilKg || 0,
+    Satgas_Fukuda_Kg: r.satgasFukudaKg || 0,
+    Total_Anorganik_Kg: r.totalKg || ((r.satgasMobilKg || 0) + (r.satgasFukudaKg || 0)),
+  }));
+  const wsAnorganik = XLSX.utils.json_to_sheet(anorganikRows);
+  wsAnorganik['!cols'] = [
+    { wch: 14 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 20 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsAnorganik, 'REKAP_ANORGANIK');
+
+  // ==========================================
+  // SHEET 7: REKAP_RESIDU
+  // ==========================================
+  const residuRows = residuRecords.map((r) => ({
+    Tanggal: r.date,
+    Kelurahan: r.kelurahanId,
+    Berat_Residu_Kg: r.beratKg || 0,
+    Lokasi_TPA: r.catatan || 'TPA Tamangapa Antang',
+  }));
+  const wsResidu = XLSX.utils.json_to_sheet(residuRows);
+  wsResidu['!cols'] = [
+    { wch: 14 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 25 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsResidu, 'REKAP_RESIDU');
+
+  // ==========================================
+  // SHEET 8: DATA_HOREKA_147
+  // ==========================================
+  const horekaRows = horekaDailyRecords.map((r, idx) => {
+    const biz = HOREKA_BUSINESSES.find((b) => b.id === r.horekaId);
+    return {
+      No: idx + 1,
+      Tanggal: r.date,
+      Nama_Usaha: biz?.namaUsaha || 'Usaha Horeka',
+      Kelurahan: r.kelurahanId,
+      Alamat: biz?.alamatUsaha || '-',
+      Organik_Kg: r.organikKg || 0,
+      Anorganik_Kg: r.anorganikKg || 0,
+      Residu_Kg: r.residuKg || 0,
+      Total_Kg: (r.organikKg || 0) + (r.anorganikKg || 0) + (r.residuKg || 0),
+    };
+  });
+  const wsHoreka = XLSX.utils.json_to_sheet(horekaRows);
+  wsHoreka['!cols'] = [
+    { wch: 6 },
+    { wch: 12 },
+    { wch: 30 },
+    { wch: 18 },
+    { wch: 30 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 16 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsHoreka, 'DATA_HOREKA_147');
+
+  // ==========================================
+  // SHEET 9: MASTER_DATA
   // ==========================================
   const masterKelurahan = KELURAHAN_LIST.map((k) => ({
     Kategori: 'MASTER KELURAHAN',
@@ -445,12 +530,21 @@ export function createFullWasteWorkbook(
     Kontak: c.phone || '0812-xxxx-xxxx',
   }));
 
-  const sheet6Data = [...masterKelurahan, ...masterPetugas];
+  const masterHoreka = HOREKA_BUSINESSES.map((b) => ({
+    Kategori: 'MASTER USAHA HOREKA',
+    Kode_Wilayah: b.id,
+    Nama: b.namaUsaha,
+    Keterangan_Alamat: b.alamatUsaha,
+    Penanggung_Jawab: `Kelurahan ${b.kelurahanId}`,
+    Kontak: '-',
+  }));
+
+  const sheet6Data = [...masterKelurahan, ...masterPetugas, ...masterHoreka];
   const ws6 = XLSX.utils.json_to_sheet(sheet6Data);
   ws6['!cols'] = [
     { wch: 26 },
     { wch: 18 },
-    { wch: 25 },
+    { wch: 30 },
     { wch: 35 },
     { wch: 28 },
     { wch: 20 },

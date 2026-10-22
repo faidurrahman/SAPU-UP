@@ -9,6 +9,10 @@ import {
   KecamatanExecutiveSummary,
   OfficialDailyPengelolaan,
   OfficialDailyReportData,
+  ResiduRecord,
+  AnorganikRecord,
+  AnorganikDailyRecord,
+  AnorganikMatrixRow,
 } from '../types/waste';
 import {
   KELURAHAN_LIST,
@@ -18,38 +22,89 @@ import {
   generateInitialOfficialPengelolaan,
   INITIAL_OFFICIAL_PENGELOLAAN,
 } from '../data/initialData';
+import {
+  INITIAL_RESIDU_MATRIX,
+  generateInitialResiduRecords,
+  generateInitialAnorganikRecords,
+  ResiduKelurahanRow,
+} from '../data/residuData';
+import {
+  INITIAL_ANORGANIK_MOBIL_MATRIX,
+  INITIAL_ANORGANIK_FUKUDA_MATRIX,
+  INITIAL_ANORGANIK_GABUNGAN_MATRIX,
+  generateInitialAnorganikDailyRecords,
+} from '../data/anorganikData';
 import { generateAndDownloadExcel } from '../utils/exportExcel';
 import {
   DEFAULT_SPREADSHEET_ID,
   DEFAULT_APPS_SCRIPT_URL,
   fetchGoogleSheetsRecords,
+  fetchAnorganikSheetsRecords,
+  fetchResiduSheetsRecords,
+  fetchHorekaSheetsRecords,
   pushRecordToGoogleAppsScript,
+  pushAnorganikToGoogleAppsScript,
+  pushResiduToGoogleAppsScript,
+  pushHorekaToGoogleAppsScript,
 } from '../utils/googleSheetsSync';
+
+import {
+  HorekaBusiness,
+  HorekaDailyRecord,
+  HOREKA_BUSINESSES,
+  generateInitialHorekaRecords,
+} from '../data/horekaData';
 
 const STORAGE_KEYS = {
   RECORDS: 'sipesat_records_v1',
   COLLECTORS: 'sipesat_collectors_v1',
   TPS3R: 'sipesat_tps3r_v1',
   OFFICIAL_PENGELOLAAN: 'sipesat_official_pengelolaan_v1',
+  RESIDU: 'sipesat_residu_v1',
+  ANORGANIK: 'sipesat_anorganik_v1',
+  ANORGANIK_DAILY: 'sipesat_anorganik_daily_v10',
+  HOREKA_DAILY: 'sipesat_horeka_daily_v1',
   GOOGLE_SHEETS_ID: 'sipesat_gsheets_id_v1',
   GOOGLE_APPS_SCRIPT_URL: 'sipesat_gas_url_v1',
   LAST_SYNC_TIME: 'sipesat_last_sync_v1',
 };
 
-export type ActiveTab = 'dashboard' | 'official-format' | 'input' | 'table' | 'compliance';
+export type ActiveTab = 'dashboard' | 'residu' | 'official-format' | 'input' | 'table' | 'compliance';
+export type InputSubTab = 'organik' | 'anorganik' | 'residu' | 'horeka';
 
 interface WasteDataContextType {
   records: DailyRecord[];
   collectors: PetugasCollector[];
   tps3rProcessing: Tps3rProcessing[];
   officialPengelolaan: OfficialDailyPengelolaan[];
+  residuRecords: ResiduRecord[];
+  anorganikRecords: AnorganikRecord[];
+  anorganikDailyRecords: AnorganikDailyRecord[];
+  horekaBusinesses: HorekaBusiness[];
+  horekaDailyRecords: HorekaDailyRecord[];
+  totalResiduKg: number;
+  totalAnorganikKg: number;
+  totalHorekaOrganikKg: number;
+  totalHorekaAnorganikKg: number;
+  totalHorekaResiduKg: number;
+  totalHorekaGrandKg: number;
+  residuMatrix: ResiduKelurahanRow[];
+  anorganikMobilMatrix: AnorganikMatrixRow[];
+  anorganikFukudaMatrix: AnorganikMatrixRow[];
+  anorganikGabunganMatrix: AnorganikMatrixRow[];
   filter: FilterState;
   setFilter: (update: Partial<FilterState>) => void;
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
+  activeInputSubTab: InputSubTab;
+  setActiveInputSubTab: (subTab: InputSubTab) => void;
   preselectedInputKelurahan: KelurahanId | null;
   setPreselectedInputKelurahan: (k: KelurahanId | null) => void;
   saveDailyRecord: (record: Omit<DailyRecord, 'id' | 'updatedAt'>) => Promise<void>;
+  saveResiduRecord: (record: Omit<ResiduRecord, 'id' | 'updatedAt'>) => void;
+  saveAnorganikRecord: (record: Omit<AnorganikRecord, 'id' | 'updatedAt'>) => void;
+  saveAnorganikDailyRecord: (record: Omit<AnorganikDailyRecord, 'id' | 'updatedAt'>) => void;
+  saveHorekaDailyRecord: (record: Omit<HorekaDailyRecord, 'updatedAt'>) => void;
   addCollector: (collector: Omit<PetugasCollector, 'id'>) => void;
   saveTps3rProcessing: (proc: Tps3rProcessing) => void;
   saveOfficialPengelolaan: (data: OfficialDailyPengelolaan) => void;
@@ -100,6 +155,7 @@ interface WasteDataContextType {
   exportToExcel: () => void;
 }
 
+
 const WasteDataContext = createContext<WasteDataContextType | undefined>(undefined);
 
 export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -143,10 +199,63 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return INITIAL_OFFICIAL_PENGELOLAAN;
   });
 
+  const [residuRecords, setResiduRecords] = useState<ResiduRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.RESIDU);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Error loading residu records from localStorage:', e);
+    }
+    return generateInitialResiduRecords();
+  });
+
+  const [anorganikRecords, setAnorganikRecords] = useState<AnorganikRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.ANORGANIK);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Error loading anorganik records from localStorage:', e);
+    }
+    return generateInitialAnorganikRecords();
+  });
+
+  const [anorganikDailyRecords, setAnorganikDailyRecords] = useState<AnorganikDailyRecord[]>(() => {
+    try {
+      // Clean up legacy keys if present
+      ['sipesat_anorganik_daily_v1', 'sipesat_anorganik_daily_v2', 'sipesat_anorganik_daily_v3', 'sipesat_anorganik_v1'].forEach((k) => {
+        localStorage.removeItem(k);
+      });
+
+      const saved = localStorage.getItem(STORAGE_KEYS.ANORGANIK_DAILY);
+      if (saved) {
+        const parsed: AnorganikDailyRecord[] = JSON.parse(saved);
+        const sum = parsed.reduce((acc, r) => acc + (r.totalKg || 0), 0);
+        if (sum >= 12000) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('Error loading anorganik daily records from localStorage:', e);
+    }
+    return generateInitialAnorganikDailyRecords();
+  });
+
+  const [horekaDailyRecords, setHorekaDailyRecords] = useState<HorekaDailyRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.HOREKA_DAILY);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Error loading horeka daily records from localStorage:', e);
+    }
+    return generateInitialHorekaRecords();
+  });
+
+  const [activeInputSubTab, setActiveInputSubTab] = useState<InputSubTab>('organik');
+
   const [filter, setFilterState] = useState<FilterState>({
     month: '2026-10',
     startDate: '2026-10-01',
-    endDate: '2026-10-21',
+    endDate: '2026-10-22',
     kelurahanId: 'ALL',
   });
 
@@ -169,7 +278,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (
         saved &&
         saved.trim().length > 0 &&
-        !saved.includes('AKfycbx-H4zOPo3oebIabWu5mL7_bisXHbOANNVaAUGdcCEYAh1j5B4CAde8pIDq8p_st50Suw')
+        saved.includes('AKfycbxgHPesDIemOQxCiqQGP6VXjt1Mucag46FeozgO5rQsvowC9NOGKpp3ONgEjOKTRfjJBQ')
       ) {
         return saved;
       }
@@ -230,6 +339,38 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     try {
+      localStorage.setItem(STORAGE_KEYS.RESIDU, JSON.stringify(residuRecords));
+    } catch (e) {
+      console.error('Failed to save residu records to localStorage:', e);
+    }
+  }, [residuRecords]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.ANORGANIK, JSON.stringify(anorganikRecords));
+    } catch (e) {
+      console.error('Failed to save anorganik records to localStorage:', e);
+    }
+  }, [anorganikRecords]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.ANORGANIK_DAILY, JSON.stringify(anorganikDailyRecords));
+    } catch (e) {
+      console.error('Failed to save anorganik daily records to localStorage:', e);
+    }
+  }, [anorganikDailyRecords]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.HOREKA_DAILY, JSON.stringify(horekaDailyRecords));
+    } catch (e) {
+      console.error('Failed to save horeka daily records to localStorage:', e);
+    }
+  }, [horekaDailyRecords]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(STORAGE_KEYS.GOOGLE_SHEETS_ID, googleSheetsId);
     } catch (e) {}
   }, [googleSheetsId]);
@@ -252,31 +393,48 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setFilterState((prev) => ({ ...prev, ...update }));
   };
 
-  // Sync from Google Sheets (Fetch CSV from live spreadsheet)
+  // Sync from Google Sheets (Fetch CSV from live spreadsheet for all sheets)
   const syncFromGoogleSheets = async () => {
     setIsSyncing(true);
     setSyncMessage(null);
     try {
-      const res = await fetchGoogleSheetsRecords(googleSheetsId);
-      if (res.success && res.records.length > 0) {
-        setRecords(res.records);
-        const now = new Date().toISOString();
-        setLastSyncTime(now);
-        try {
-          localStorage.setItem(STORAGE_KEYS.LAST_SYNC_TIME, now);
-        } catch (e) {}
-        setSyncMessage({
-          type: 'success',
-          text: `Berhasil menyinkronkan ${res.records.length} data laporan harian langsung dari Google Sheets!`,
-        });
-        setToastMessage(`Sinkronisasi sukses! ${res.records.length} data diperbarui dari Google Sheets.`);
-      } else {
-        setSyncMessage({
-          type: 'error',
-          text: res.error || 'Tidak ada baris data valid yang ditemukan pada sheet INPUT_HARIAN.',
-        });
-        setToastMessage('Gagal menyinkronkan data.');
+      const [orgRes, anorgRes, resRes, horRes] = await Promise.all([
+        fetchGoogleSheetsRecords(googleSheetsId),
+        fetchAnorganikSheetsRecords(googleSheetsId),
+        fetchResiduSheetsRecords(googleSheetsId),
+        fetchHorekaSheetsRecords(googleSheetsId),
+      ]);
+
+      let updatedCount = 0;
+
+      if (orgRes.success && orgRes.records.length > 0) {
+        setRecords(orgRes.records);
+        updatedCount += orgRes.records.length;
       }
+      if (anorgRes.success && anorgRes.records.length > 0) {
+        setAnorganikDailyRecords(anorgRes.records);
+        updatedCount += anorgRes.records.length;
+      }
+      if (resRes.success && resRes.records.length > 0) {
+        setResiduRecords(resRes.records);
+        updatedCount += resRes.records.length;
+      }
+      if (horRes.success && horRes.records.length > 0) {
+        setHorekaDailyRecords(horRes.records);
+        updatedCount += horRes.records.length;
+      }
+
+      const now = new Date().toISOString();
+      setLastSyncTime(now);
+      try {
+        localStorage.setItem(STORAGE_KEYS.LAST_SYNC_TIME, now);
+      } catch (e) {}
+
+      setSyncMessage({
+        type: 'success',
+        text: `Berhasil menyinkronkan data langsung dari Google Sheets!`,
+      });
+      setToastMessage(`Sinkronisasi sukses! Data terhubung langsung dengan Google Sheets.`);
     } catch (err: any) {
       setSyncMessage({
         type: 'error',
@@ -287,6 +445,11 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setIsSyncing(false);
     }
   };
+
+  // Auto sync on initial mount
+  useEffect(() => {
+    syncFromGoogleSheets();
+  }, []);
 
   const saveDailyRecord = async (newRecord: Omit<DailyRecord, 'id' | 'updatedAt'>) => {
     const id = `${newRecord.date}_${newRecord.kelurahanId}`;
@@ -312,7 +475,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const res = await pushRecordToGoogleAppsScript(googleAppsScriptUrl, newRecord);
         setLastPushResult(res);
         if (res.success) {
-          setToastMessage(`✅ Data Kelurahan ${newRecord.kelurahanId} berhasil tersimpan!`);
+          setToastMessage(`✅ Data Organik Kelurahan ${newRecord.kelurahanId} BERHASIL tersimpan di Google Spreadsheet!`);
         } else {
           setToastMessage(
             `⚠️ Data tersimpan di aplikasi, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`
@@ -369,6 +532,166 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setToastMessage(`Data Pengelolaan Sampah Organik tanggal ${data.date} berhasil disimpan.`);
   };
 
+  const saveResiduRecord = async (record: Omit<ResiduRecord, 'id' | 'updatedAt'>) => {
+    const id = `${record.date}_${record.kelurahanId}`;
+    const newRecord: ResiduRecord = {
+      ...record,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    setResiduRecords((prev) => {
+      const idx = prev.findIndex((r) => r.id === id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newRecord;
+        return copy;
+      }
+      return [...prev, newRecord];
+    });
+
+    if (googleAppsScriptUrl) {
+      setIsSavingToSheets(true);
+      try {
+        const res = await pushResiduToGoogleAppsScript(googleAppsScriptUrl, {
+          date: record.date,
+          kelurahanId: record.kelurahanId,
+          beratKg: record.beratKg,
+          catatan: record.catatan,
+          submittedBy: record.submittedBy,
+        });
+        setLastPushResult(res);
+        if (res.success) {
+          setToastMessage(`✅ Data Residu Kelurahan ${record.kelurahanId} tanggal ${record.date} (${record.beratKg} Kg) BERHASIL tersimpan di Google Spreadsheet!`);
+        } else {
+          setToastMessage(`⚠️ Tersimpan di Web, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`);
+        }
+      } catch (err: any) {
+        setLastPushResult({ success: false, message: 'Gagal menghubungi Google Apps Script.' });
+        setToastMessage(`⚠️ Tersimpan lokal, namun gagal menghubungi Google Sheets.`);
+      } finally {
+        setIsSavingToSheets(false);
+      }
+    } else {
+      setToastMessage(`✅ Data Residu Kelurahan ${record.kelurahanId} tanggal ${record.date} (${record.beratKg.toLocaleString('id-ID')} Kg) berhasil disimpan!`);
+    }
+  };
+
+  const saveAnorganikRecord = (record: Omit<AnorganikRecord, 'id' | 'updatedAt'>) => {
+    const id = `${record.date}_${record.kelurahanId}`;
+    const newRecord: AnorganikRecord = {
+      ...record,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    setAnorganikRecords((prev) => {
+      const idx = prev.findIndex((r) => r.id === id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newRecord;
+        return copy;
+      }
+      return [...prev, newRecord];
+    });
+    setToastMessage(`✅ Data Anorganik Kelurahan ${record.kelurahanId} tanggal ${record.date} (${record.totalKg.toLocaleString('id-ID')} Kg) berhasil disimpan!`);
+  };
+
+  const saveAnorganikDailyRecord = async (record: Omit<AnorganikDailyRecord, 'id' | 'updatedAt'>) => {
+    const id = `${record.date}_${record.kelurahanId}`;
+    const totalKg = (record.satgasMobilKg || 0) + (record.satgasFukudaKg || 0);
+    const newRecord: AnorganikDailyRecord = {
+      ...record,
+      totalKg,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    setAnorganikDailyRecords((prev) => {
+      const idx = prev.findIndex((r) => r.id === id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newRecord;
+        return copy;
+      }
+      return [...prev, newRecord];
+    });
+
+    if (googleAppsScriptUrl) {
+      setIsSavingToSheets(true);
+      try {
+        const res = await pushAnorganikToGoogleAppsScript(googleAppsScriptUrl, {
+          date: record.date,
+          kelurahanId: record.kelurahanId,
+          satgasMobilKg: record.satgasMobilKg,
+          satgasFukudaKg: record.satgasFukudaKg,
+          catatan: record.catatan,
+          submittedBy: record.submittedBy,
+        });
+        setLastPushResult(res);
+        if (res.success) {
+          setToastMessage(`✅ Data Anorganik Kelurahan ${record.kelurahanId} tanggal ${record.date} (${totalKg} Kg) BERHASIL tersimpan di Google Spreadsheet!`);
+        } else {
+          setToastMessage(`⚠️ Tersimpan di Web, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`);
+        }
+      } catch (err: any) {
+        setLastPushResult({ success: false, message: 'Gagal menghubungi Google Apps Script.' });
+        setToastMessage(`⚠️ Tersimpan lokal, namun gagal menghubungi Google Sheets.`);
+      } finally {
+        setIsSavingToSheets(false);
+      }
+    } else {
+      setToastMessage(`✅ Data Anorganik Kelurahan ${record.kelurahanId} tanggal ${record.date} (Mobil: ${record.satgasMobilKg} Kg, Fukuda: ${record.satgasFukudaKg} Kg) berhasil disimpan!`);
+    }
+  };
+
+  const saveHorekaDailyRecord = async (record: Omit<HorekaDailyRecord, 'updatedAt'>) => {
+    const newRecord: HorekaDailyRecord = {
+      ...record,
+      updatedAt: new Date().toISOString(),
+    };
+    setHorekaDailyRecords((prev) => {
+      const idx = prev.findIndex((r) => r.date === record.date && r.horekaId === record.horekaId);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newRecord;
+        return copy;
+      }
+      return [...prev, newRecord];
+    });
+
+    const business = HOREKA_BUSINESSES.find((b) => b.id === record.horekaId);
+    const namaUsaha = business ? business.namaUsaha : record.horekaId;
+    const alamat = business ? business.alamatUsaha : '-';
+
+    if (googleAppsScriptUrl) {
+      setIsSavingToSheets(true);
+      try {
+        const res = await pushHorekaToGoogleAppsScript(googleAppsScriptUrl, {
+          date: record.date,
+          horekaId: record.horekaId,
+          namaUsaha,
+          kelurahanId: record.kelurahanId,
+          alamat,
+          organikKg: record.organikKg,
+          anorganikKg: record.anorganikKg,
+          residuKg: record.residuKg,
+          operatorName: record.operatorName,
+        });
+        setLastPushResult(res);
+        if (res.success) {
+          setToastMessage(`✅ Data Horeka ${namaUsaha} tanggal ${record.date} BERHASIL tersimpan di Google Spreadsheet!`);
+        } else {
+          setToastMessage(`⚠️ Tersimpan di Web, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`);
+        }
+      } catch (err: any) {
+        setLastPushResult({ success: false, message: 'Gagal menghubungi Google Apps Script.' });
+        setToastMessage(`⚠️ Tersimpan lokal, namun gagal menghubungi Google Sheets.`);
+      } finally {
+        setIsSavingToSheets(false);
+      }
+    } else {
+      setToastMessage(`✅ Data Horeka ${namaUsaha} tanggal ${record.date} (Organik: ${record.organikKg} Kg, Anorganik: ${record.anorganikKg} Kg, Residu: ${record.residuKg} Kg) berhasil disimpan!`);
+    }
+  };
+
   const resetToDefaultData = () => {
     const initialRecords = generateInitialDailyRecords();
     const initialProc = generateInitialTps3rProcessing();
@@ -377,14 +700,155 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setCollectors(INITIAL_COLLECTORS);
     setTps3rProcessing(initialProc);
     setOfficialPengelolaan(initialOfficial);
+    setResiduRecords(generateInitialResiduRecords());
+    setAnorganikRecords(generateInitialAnorganikRecords());
+    setAnorganikDailyRecords(generateInitialAnorganikDailyRecords());
+    setHorekaDailyRecords(generateInitialHorekaRecords());
     setFilterState({
       month: '2026-10',
       startDate: '2026-10-01',
       endDate: '2026-10-21',
       kelurahanId: 'ALL',
     });
-    setToastMessage('Data berhasil direset ke dataset resmi Oktober 2026 (40.896 Kg).');
+    setToastMessage('Data berhasil direset ke dataset resmi Oktober 2026.');
   };
+
+  // Matrix and total for Residu
+  const residuMatrix = useMemo<ResiduKelurahanRow[]>(() => {
+    return INITIAL_RESIDU_MATRIX.map((base) => {
+      const dailyKg: { [day: number]: number } = { ...base.dailyKg };
+      let sum = 0;
+      for (let day = 1; day <= 30; day++) {
+        const dStr = day < 10 ? `0${day}` : `${day}`;
+        const dateKey = `2026-10-${dStr}`;
+        const match = residuRecords.find((r) => r.kelurahanId === base.kelurahanId && r.date === dateKey);
+        if (match) {
+          dailyKg[day] = match.beratKg;
+        }
+        sum += dailyKg[day] || 0;
+      }
+      return {
+        ...base,
+        dailyKg,
+        totalKg: sum,
+      };
+    });
+  }, [residuRecords]);
+
+  // Matrices for Anorganik (Satgas Mobil, Satgas Fukuda, Total Gabungan)
+  const anorganikMobilMatrix = useMemo<AnorganikMatrixRow[]>(() => {
+    return INITIAL_ANORGANIK_MOBIL_MATRIX.map((base) => {
+      const dailyKg: { [day: number]: number } = { ...base.dailyKg };
+      let sum = 0;
+      for (let day = 1; day <= 30; day++) {
+        const dStr = day < 10 ? `0${day}` : `${day}`;
+        const dateKey = `2026-10-${dStr}`;
+        const match = anorganikDailyRecords.find((r) => r.kelurahanId === base.kelurahanId && r.date === dateKey);
+        if (match) {
+          dailyKg[day] = match.satgasMobilKg ?? 0;
+        }
+        sum += dailyKg[day] || 0;
+      }
+      return {
+        ...base,
+        dailyKg,
+        totalKg: sum,
+      };
+    });
+  }, [anorganikDailyRecords]);
+
+  const anorganikFukudaMatrix = useMemo<AnorganikMatrixRow[]>(() => {
+    return INITIAL_ANORGANIK_FUKUDA_MATRIX.map((base) => {
+      const dailyKg: { [day: number]: number } = { ...base.dailyKg };
+      let sum = 0;
+      for (let day = 1; day <= 30; day++) {
+        const dStr = day < 10 ? `0${day}` : `${day}`;
+        const dateKey = `2026-10-${dStr}`;
+        const match = anorganikDailyRecords.find((r) => r.kelurahanId === base.kelurahanId && r.date === dateKey);
+        if (match) {
+          dailyKg[day] = match.satgasFukudaKg ?? 0;
+        }
+        sum += dailyKg[day] || 0;
+      }
+      return {
+        ...base,
+        dailyKg,
+        totalKg: sum,
+      };
+    });
+  }, [anorganikDailyRecords]);
+
+  const anorganikGabunganMatrix = useMemo<AnorganikMatrixRow[]>(() => {
+    return INITIAL_ANORGANIK_GABUNGAN_MATRIX.map((base) => {
+      const dailyKg: { [day: number]: number } = { ...base.dailyKg };
+      let sum = 0;
+      for (let day = 1; day <= 30; day++) {
+        const dStr = day < 10 ? `0${day}` : `${day}`;
+        const dateKey = `2026-10-${dStr}`;
+        const match = anorganikDailyRecords.find((r) => r.kelurahanId === base.kelurahanId && r.date === dateKey);
+        if (match) {
+          dailyKg[day] = match.totalKg ?? ((match.satgasMobilKg || 0) + (match.satgasFukudaKg || 0));
+        }
+        sum += dailyKg[day] || 0;
+      }
+      return {
+        ...base,
+        dailyKg,
+        totalKg: sum,
+      };
+    });
+  }, [anorganikDailyRecords]);
+
+  const totalResiduKg = useMemo(() => {
+    let sum = 0;
+    const startDay = filter.startDate ? parseInt(filter.startDate.split('-')[2], 10) : 1;
+    const endDay = filter.endDate ? parseInt(filter.endDate.split('-')[2], 10) : 31;
+
+    for (const row of residuMatrix) {
+      if (filter.kelurahanId !== 'ALL' && row.kelurahanId !== filter.kelurahanId) continue;
+      for (let day = startDay; day <= endDay; day++) {
+        sum += row.dailyKg[day] || 0;
+      }
+    }
+    return sum;
+  }, [residuMatrix, filter]);
+
+  const totalAnorganikKg = useMemo(() => {
+    let sum = 0;
+    const startDay = filter.startDate ? parseInt(filter.startDate.split('-')[2], 10) : 1;
+    const endDay = filter.endDate ? parseInt(filter.endDate.split('-')[2], 10) : 31;
+
+    for (const row of anorganikGabunganMatrix) {
+      if (filter.kelurahanId !== 'ALL' && row.kelurahanId !== filter.kelurahanId) continue;
+      for (let day = startDay; day <= endDay; day++) {
+        sum += row.dailyKg[day] || 0;
+      }
+    }
+    return sum;
+  }, [anorganikGabunganMatrix, filter]);
+
+  const filteredHorekaRecords = useMemo(() => {
+    return horekaDailyRecords.filter((r) => {
+      if (filter.startDate && r.date < filter.startDate) return false;
+      if (filter.endDate && r.date > filter.endDate) return false;
+      if (filter.kelurahanId !== 'ALL' && r.kelurahanId !== filter.kelurahanId) return false;
+      return true;
+    });
+  }, [horekaDailyRecords, filter]);
+
+  const totalHorekaOrganikKg = useMemo(() => {
+    return filteredHorekaRecords.reduce((sum, r) => sum + (r.organikKg || 0), 0);
+  }, [filteredHorekaRecords]);
+
+  const totalHorekaAnorganikKg = useMemo(() => {
+    return filteredHorekaRecords.reduce((sum, r) => sum + (r.anorganikKg || 0), 0);
+  }, [filteredHorekaRecords]);
+
+  const totalHorekaResiduKg = useMemo(() => {
+    return filteredHorekaRecords.reduce((sum, r) => sum + (r.residuKg || 0), 0);
+  }, [filteredHorekaRecords]);
+
+  const totalHorekaGrandKg = totalHorekaOrganikKg + totalHorekaAnorganikKg + totalHorekaResiduKg;
 
   const getRecordForDateAndKelurahan = (date: string, kelurahanId: KelurahanId) => {
     return records.find((r) => r.date === date && r.kelurahanId === kelurahanId);
@@ -857,8 +1321,15 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Export to genuine multi-sheet Excel (.xlsx)
   const exportToExcel = () => {
     try {
-      generateAndDownloadExcel(records, collectors, tps3rProcessing);
-      setToastMessage('File Excel (.xlsx) 4 Sheet berhasil diunduh!');
+      generateAndDownloadExcel(
+        records,
+        collectors,
+        tps3rProcessing,
+        residuRecords,
+        anorganikDailyRecords,
+        horekaDailyRecords
+      );
+      setToastMessage('File Excel (.xlsx) 9 Sheet lengkap berhasil diunduh!');
     } catch (e) {
       console.error('Failed to export Excel:', e);
       setToastMessage('Gagal membuat file Excel.');
@@ -868,6 +1339,27 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   return (
     <WasteDataContext.Provider
       value={{
+        residuRecords,
+        anorganikRecords,
+        anorganikDailyRecords,
+        horekaBusinesses: HOREKA_BUSINESSES,
+        horekaDailyRecords,
+        totalResiduKg,
+        totalAnorganikKg,
+        totalHorekaOrganikKg,
+        totalHorekaAnorganikKg,
+        totalHorekaResiduKg,
+        totalHorekaGrandKg,
+        residuMatrix,
+        anorganikMobilMatrix,
+        anorganikFukudaMatrix,
+        anorganikGabunganMatrix,
+        activeInputSubTab,
+        setActiveInputSubTab,
+        saveResiduRecord,
+        saveAnorganikRecord,
+        saveAnorganikDailyRecord,
+        saveHorekaDailyRecord,
         records,
         collectors,
         tps3rProcessing,

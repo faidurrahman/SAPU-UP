@@ -11,6 +11,7 @@ import { InputPortalView } from './components/InputPortalView';
 import { RecapTableView } from './components/RecapTableView';
 import { ComplianceView } from './components/ComplianceView';
 import { OfficialReportView } from './components/OfficialReportView';
+import { ResiduView } from './components/ResiduView';
 import { PrintReportModal } from './components/PrintReportModal';
 import { SpreadsheetGuideModal } from './components/SpreadsheetGuideModal';
 import { CheckCircle2, X } from 'lucide-react';
@@ -52,6 +53,7 @@ const AppContent: React.FC = () => {
             onOpenSpreadsheetGuide={() => setIsSpreadsheetGuideOpen(true)}
           />
         )}
+        {activeTab === 'residu' && <ResiduView />}
         {activeTab === 'compliance' && <ComplianceView />}
       </main>
 

@@ -360,8 +360,8 @@ export function generateInitialDailyRecords(): DailyRecord[] {
       dailyShares: distributeOver21Days(c.targetKg, DAY_WEIGHTS),
     }));
 
-    for (let day = 1; day <= 21; day++) {
-      const dayIndex = day - 1;
+    for (let day = 1; day <= 22; day++) {
+      const dayIndex = (day - 1) % 21;
       const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
 
       if (day === 20 && EXACT_DAY_20_MAP[spec.kelurahanId]) {

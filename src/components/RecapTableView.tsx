@@ -15,9 +15,16 @@ import {
   FileSpreadsheet,
   RefreshCw,
   Code2,
+  Leaf,
+  Trash2,
+  Recycle,
+  Store,
 } from 'lucide-react';
 import { GoogleSheetsSyncModal } from './GoogleSheetsSyncModal';
 import { ScrollReveal } from './ScrollReveal';
+import { ResiduView } from './ResiduView';
+import { AnorganikView } from './AnorganikView';
+import { HorekaView } from './HorekaView';
 
 interface RecapTableViewProps {
   onOpenPrintModal: () => void;
@@ -44,6 +51,9 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
   } = useWasteData();
 
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+
+  // Sub tab: 'organik' | 'anorganik' | 'residu' | 'horeka'
+  const [rekapSubTab, setRekapSubTab] = useState<'organik' | 'anorganik' | 'residu' | 'horeka'>('organik');
 
   // Search filter inside table
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -153,7 +163,66 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Table Control Bar */}
+      {/* Sub-Tab Navigation Bar: Organik vs Anorganik vs Residu */}
+      <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-xl border border-slate-200/90 shadow-2xs no-print">
+        <button
+          onClick={() => setRekapSubTab('organik')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+            rekapSubTab === 'organik'
+              ? 'bg-emerald-700 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          <Leaf className="w-4 h-4" />
+          <span>Rekapitulasi Harian Organik</span>
+        </button>
+
+        <button
+          onClick={() => setRekapSubTab('anorganik')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+            rekapSubTab === 'anorganik'
+              ? 'bg-teal-700 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          <Recycle className="w-4 h-4" />
+          <span>Rekapitulasi Anorganik</span>
+        </button>
+
+        <button
+          onClick={() => setRekapSubTab('residu')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+            rekapSubTab === 'residu'
+              ? 'bg-rose-700 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          <Trash2 className="w-4 h-4" />
+          <span>Rekapitulasi Residu TPA</span>
+        </button>
+
+        <button
+          onClick={() => setRekapSubTab('horeka')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+            rekapSubTab === 'horeka'
+              ? 'bg-indigo-700 text-white shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          <Store className="w-4 h-4" />
+          <span>Rekapitulasi Horeka</span>
+        </button>
+      </div>
+
+      {rekapSubTab === 'horeka' ? (
+        <HorekaView />
+      ) : rekapSubTab === 'residu' ? (
+        <ResiduView />
+      ) : rekapSubTab === 'anorganik' ? (
+        <AnorganikView />
+      ) : (
+        <>
+          {/* Table Control Bar */}
       <ScrollReveal delay={0} distance={18} duration={600}>
         <div className="bg-white rounded-xl border border-slate-200/90 p-4 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-out no-print">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -272,9 +341,9 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
           <div className="overflow-x-auto custom-scrollbar max-h-[720px]">
             <table className="w-full text-left border-collapse text-xs">
               {/* Sticky Table Header */}
-              <thead className="bg-slate-100/90 backdrop-blur-md sticky top-0 z-30 border-b border-slate-200 text-slate-700">
+              <thead className="bg-slate-100 sticky top-0 z-30 border-b border-slate-200 text-slate-700">
               <tr>
-                <th className="py-2.5 px-3 font-bold sticky left-0 z-40 bg-slate-100/95 min-w-[200px] border-r border-slate-200">
+                <th className="py-2.5 px-3 font-bold sticky left-0 z-40 bg-slate-100 min-w-[200px] border-r border-slate-200 shadow-[4px_0_6px_-1px_rgba(0,0,0,0.05)]">
                   Kelurahan / Sub-Kategori
                 </th>
                 <th className="py-2.5 px-2 font-semibold text-center w-16 border-r border-slate-200">
@@ -309,7 +378,7 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                   </>
                 )}
 
-                <th className="py-2.5 px-3 font-bold text-right sticky right-0 z-40 bg-emerald-100/90 text-emerald-950 min-w-[100px] border-l border-emerald-200">
+                <th className="py-2.5 px-3 font-bold text-right sticky right-0 z-40 bg-emerald-100 text-emerald-950 min-w-[100px] border-l border-emerald-300 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.08)]">
                   TOTAL (Kg)
                 </th>
               </tr>
@@ -367,8 +436,8 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                 return (
                   <React.Fragment key={kel.id}>
                     {/* Main Kelurahan Header Row */}
-                    <tr className="bg-slate-50/80 hover:bg-slate-100/70 font-semibold transition-colors">
-                      <td className="py-2 px-3 sticky left-0 z-20 bg-slate-50/95 border-r border-slate-200">
+                    <tr className="bg-slate-50 hover:bg-slate-100/80 font-semibold transition-colors">
+                      <td className="py-2 px-3 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 shadow-[4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                         <button
                           onClick={() => toggleExpand(kel.id)}
                           className="flex items-center gap-1.5 text-left text-slate-900 hover:text-emerald-800"
@@ -420,7 +489,7 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                         </>
                       )}
 
-                      <td className="py-2 px-3 text-right font-mono font-bold text-emerald-950 sticky right-0 z-20 bg-emerald-100/90 tabular-nums border-l border-emerald-200">
+                      <td className="py-2 px-3 text-right font-mono font-bold text-emerald-950 sticky right-0 z-20 bg-emerald-100 tabular-nums border-l border-emerald-300 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.06)]">
                         {fmtZero(grandTotal)}
                       </td>
                     </tr>
@@ -429,8 +498,8 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                     {isExpanded && (
                       <>
                         {/* Sub-row 1: Makanan */}
-                        <tr className="hover:bg-slate-50/50 text-[11px] text-slate-600">
-                          <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-white border-r border-slate-200 text-slate-700">
+                        <tr className="hover:bg-slate-50 text-[11px] text-slate-600">
+                          <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-white border-r border-slate-200 text-slate-700 shadow-[4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                             · Makanan (Organik Basah)
                           </td>
                           <td className="py-1.5 px-2 text-center text-[10px] text-slate-400 border-r border-slate-200">
@@ -452,14 +521,14 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                               <td className="py-1.5 px-2 text-right font-mono text-slate-400 border-r border-slate-200">-</td>
                             </>
                           )}
-                          <td className="py-1.5 px-3 text-right font-mono text-slate-800 sticky right-0 z-10 bg-white/95 tabular-nums border-l border-emerald-200">
+                          <td className="py-1.5 px-3 text-right font-mono text-slate-800 sticky right-0 z-10 bg-white tabular-nums border-l border-emerald-200 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                             {fmtZero(totalMakananTpa + totalMakananTps3r)}
                           </td>
                         </tr>
 
                         {/* Sub-row 2: Sisa Buah */}
-                        <tr className="hover:bg-slate-50/50 text-[11px] text-slate-600">
-                          <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-white border-r border-slate-200 text-slate-700">
+                        <tr className="hover:bg-slate-50 text-[11px] text-slate-600">
+                          <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-white border-r border-slate-200 text-slate-700 shadow-[4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                             · Sisa Buah
                           </td>
                           <td className="py-1.5 px-2 text-center text-[10px] text-slate-400 border-r border-slate-200">
@@ -481,14 +550,14 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                               <td className="py-1.5 px-2 text-right font-mono text-slate-400 border-r border-slate-200">-</td>
                             </>
                           )}
-                          <td className="py-1.5 px-3 text-right font-mono text-slate-800 sticky right-0 z-10 bg-white/95 tabular-nums border-l border-emerald-200">
+                          <td className="py-1.5 px-3 text-right font-mono text-slate-800 sticky right-0 z-10 bg-white tabular-nums border-l border-emerald-200 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                             {fmtZero(totalBuahTpa + totalBuahTps3r)}
                           </td>
                         </tr>
 
                         {/* Sub-row 3: Sisa Sayur */}
-                        <tr className="hover:bg-slate-50/50 text-[11px] text-slate-600">
-                          <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-white border-r border-slate-200 text-slate-700">
+                        <tr className="hover:bg-slate-50 text-[11px] text-slate-600">
+                          <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-white border-r border-slate-200 text-slate-700 shadow-[4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                             · Sisa Sayur
                           </td>
                           <td className="py-1.5 px-2 text-center text-[10px] text-slate-400 border-r border-slate-200">
@@ -510,14 +579,14 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                               <td className="py-1.5 px-2 text-right font-mono text-slate-400 border-r border-slate-200">-</td>
                             </>
                           )}
-                          <td className="py-1.5 px-3 text-right font-mono text-slate-800 sticky right-0 z-10 bg-white/95 tabular-nums border-l border-emerald-200">
+                          <td className="py-1.5 px-3 text-right font-mono text-slate-800 sticky right-0 z-10 bg-white tabular-nums border-l border-emerald-200 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                             {fmtZero(totalSayurTpa + totalSayurTps3r)}
                           </td>
                         </tr>
 
                         {/* Sub-row 4: Daun */}
-                        <tr className="hover:bg-slate-50/50 text-[11px] text-slate-600">
-                          <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-white border-r border-slate-200 text-slate-700">
+                        <tr className="hover:bg-slate-50 text-[11px] text-slate-600">
+                          <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-white border-r border-slate-200 text-slate-700 shadow-[4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                             · Daun
                           </td>
                           <td className="py-1.5 px-2 text-center text-[10px] text-slate-400 border-r border-slate-200">
@@ -539,7 +608,7 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                               <td className="py-1.5 px-2 text-right font-mono text-slate-400 border-r border-slate-200">-</td>
                             </>
                           )}
-                          <td className="py-1.5 px-3 text-right font-mono text-slate-800 sticky right-0 z-10 bg-white/95 tabular-nums border-l border-emerald-200">
+                          <td className="py-1.5 px-3 text-right font-mono text-slate-800 sticky right-0 z-10 bg-white tabular-nums border-l border-emerald-200 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                             {fmtZero(totalDaunTpa + totalDaunTps3r)}
                           </td>
                         </tr>
@@ -548,8 +617,8 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                         {activeCollectors.map((col) => {
                           const colTotal = collectorSums.get(col.name) || 0;
                           return (
-                            <tr key={col.id} className="hover:bg-amber-50/40 text-[11px] text-amber-900 bg-amber-50/20">
-                              <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-amber-50/60 border-r border-slate-200 font-medium">
+                            <tr key={col.id} className="hover:bg-amber-50/50 text-[11px] text-amber-900 bg-amber-50/30">
+                              <td className="py-1.5 pl-8 pr-3 sticky left-0 z-10 bg-amber-50 border-r border-slate-200 font-medium shadow-[4px_0_6px_-1px_rgba(0,0,0,0.04)]">
                                 ↳ Pakan: {col.name}
                               </td>
                               <td className="py-1.5 px-2 text-center text-[10px] text-amber-600 border-r border-slate-200">
@@ -572,7 +641,7 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                                   <td className="py-1.5 px-2 text-right font-mono text-amber-700 font-semibold tabular-nums border-r border-slate-200">{fmtZero(colTotal)}</td>
                                 </>
                               )}
-                              <td className="py-1.5 px-3 text-right font-mono font-semibold text-amber-900 sticky right-0 z-10 bg-amber-100/60 tabular-nums border-l border-emerald-200">
+                              <td className="py-1.5 px-3 text-right font-mono font-semibold text-amber-900 sticky right-0 z-10 bg-amber-100 tabular-nums border-l border-amber-300 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.06)]">
                                 {fmtZero(colTotal)}
                               </td>
                             </tr>
@@ -589,7 +658,7 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
             <tfoot className="border-t-2 border-slate-300 bg-slate-900 text-white font-bold text-xs sticky bottom-0 z-30">
               {/* Grand Total Row */}
               <tr>
-                <td className="py-3 px-3 sticky left-0 z-40 bg-slate-900 border-r border-slate-700">
+                <td className="py-3 px-3 sticky left-0 z-40 bg-slate-900 border-r border-slate-700 shadow-[4px_0_6px_-1px_rgba(0,0,0,0.1)]">
                   REKAP KECAMATAN UJUNG PANDANG
                 </td>
                 <td className="py-3 px-2 text-center text-[10px] text-emerald-400 border-r border-slate-700 font-mono">
@@ -622,7 +691,7 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
                   </>
                 )}
 
-                <td className="py-3 px-3 text-right font-mono text-base font-extrabold text-emerald-400 sticky right-0 z-40 bg-slate-950 tabular-nums border-l border-slate-700">
+                <td className="py-3 px-3 text-right font-mono text-base font-extrabold text-emerald-400 sticky right-0 z-40 bg-slate-950 tabular-nums border-l border-slate-700 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.2)]">
                   {fmtZero(executiveSummary.grandTotal)}
                 </td>
               </tr>
@@ -684,6 +753,8 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
           </div>
         </div>
       </ScrollReveal>
+        </>
+      )}
 
       {/* Google Sheets Sync & Apps Script Modal */}
       <GoogleSheetsSyncModal

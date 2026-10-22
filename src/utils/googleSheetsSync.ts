@@ -1,9 +1,429 @@
-import { DailyRecord, KelurahanId, WasteComposition, PakanCollectorInput } from '../types/waste';
+import { DailyRecord, KelurahanId, WasteComposition, PakanCollectorInput, AnorganikDailyRecord, ResiduRecord } from '../types/waste';
 import { KELURAHAN_LIST } from '../data/initialData';
+import { HorekaDailyRecord, HOREKA_BUSINESSES } from '../data/horekaData';
 
-export const DEFAULT_SPREADSHEET_ID = '1NU5cVMjCR0tQuzFZjMZxh56X6ouzsJqahROiPKzXl2s';
+export const DEFAULT_SPREADSHEET_ID = '1tQgk10GLzPEdv60mztUPR8aO_bFX3yWW8yxaoi8b5eU';
 export const DEFAULT_APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbwF_30eYsRZDUBSXB3DNB4ByWsRPaHyz8N4tziyRaVqvdv0gkLDH1KhiTO8cWvljMlPcw/exec';
+  'https://script.google.com/macros/s/AKfycbxgHPesDIemOQxCiqQGP6VXjt1Mucag46FeozgO5rQsvowC9NOGKpp3ONgEjOKTRfjJBQ/exec';
+
+export const FULL_APPS_SCRIPT_CODE = `/**
+ * =========================================================================
+ * GOOGLE APPS SCRIPT (Code.gs) - SIPESAT KECAMATAN UJUNG PANDANG
+ * Spreadsheet ID Target: 1tQgk10GLzPEdv60mztUPR8aO_bFX3yWW8yxaoi8b5eU
+ * =========================================================================
+ * 
+ * MANAJEMEN DATA INTEGRASI WEB & GOOGLE SHEETS:
+ * 1. Membaca data harian Organik, Anorganik, Residu, dan Horeka (doGet)
+ * 2. Menambah & Mengedit data harian per tanggal & Kelurahan / Usaha Horeka (doPost)
+ * 3. Otomatis menghitung formula total di Google Sheets
+ * 
+ * TATA CARA PASANG:
+ * 1. Buka Google Sheets Anda (ID: 1tQgk10GLzPEdv60mztUPR8aO_bFX3yWW8yxaoi8b5eU)
+ * 2. Klik menu "Ekstensi" (Extensions) -> "Apps Script"
+ * 3. Hapus seluruh kode lama di Code.gs, lalu Salin & Tempel SEMUA kode di bawah ini.
+ * 4. Klik "Simpan" (Ctrl+S)
+ * 5. Klik "Terapkan" (Deploy) -> "Penerapan Baru" (New Deployment)
+ * 6. Pilih Jenis: "Aplikasi Web" (Web app)
+ * 7. Jalankan Sebagai: "Saya" (Me)
+ * 8. Siapa yang memiliki akses: "Siapa saja" (Anyone)
+ * 9. Klik "Terapkan" (Deploy) lalu berikan izin otorisasi Google.
+ * 10. Salin URL Web App yang dihasilkan ke aplikasi Web Anda!
+ */
+
+var SPREADSHEET_ID = "1tQgk10GLzPEdv60mztUPR8aO_bFX3yWW8yxaoi8b5eU";
+
+function getSpreadsheet() {
+  if (SPREADSHEET_ID && SPREADSHEET_ID.length > 5) {
+    try {
+      return SpreadsheetApp.openById(SPREADSHEET_ID);
+    } catch(e) {
+      return SpreadsheetApp.getActiveSpreadsheet();
+    }
+  }
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+function jsonResponse(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet(e) {
+  try {
+    var ss = getSpreadsheet();
+    var sheetName = (e && e.parameter && e.parameter.sheet) ? e.parameter.sheet : "INPUT_HARIAN";
+    var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : "getAll";
+    
+    if (action === "ping") {
+      return jsonResponse({
+        status: "success",
+        message: "Google Apps Script Active & Connected to Spreadsheet ID " + SPREADSHEET_ID,
+        spreadsheetId: SPREADSHEET_ID,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.getSheets()[0];
+    }
+    
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) {
+      return jsonResponse({
+        status: "success",
+        sheetName: sheet.getName(),
+        records: [],
+        totalRecords: 0
+      });
+    }
+
+    var headers = data[0];
+    var records = [];
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (!row[0] && !row[1] && !row[2]) continue;
+
+      var obj = {};
+      for (var h = 0; h < headers.length; h++) {
+        var headerKey = String(headers[h]).trim();
+        var val = row[h];
+        if (val instanceof Date) {
+          val = Utilities.formatDate(val, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
+        }
+        obj[headerKey] = val;
+      }
+      records.push(obj);
+    }
+
+    return jsonResponse({
+      status: "success",
+      sheetName: sheet.getName(),
+      totalRecords: records.length,
+      records: records
+    });
+
+  } catch (err) {
+    return jsonResponse({
+      status: "error",
+      message: err.toString()
+    });
+  }
+}
+
+function doPost(e) {
+  try {
+    var contents = e.postData.contents;
+    var payload = {};
+    if (contents) {
+      payload = JSON.parse(contents);
+    }
+
+    var action = payload.action || "saveRecord";
+    var ss = getSpreadsheet();
+
+    if (action === "saveRecord" || action === "saveOrganik") {
+      return handleSaveOrganik(ss, payload.data);
+    } else if (action === "saveAnorganik") {
+      return handleSaveAnorganik(ss, payload.data);
+    } else if (action === "saveResidu") {
+      return handleSaveResidu(ss, payload.data);
+    } else if (action === "saveHoreka") {
+      return handleSaveHoreka(ss, payload.data);
+    } else if (action === "delete") {
+      return handleDeleteRow(ss, payload.sheet || "INPUT_HARIAN", payload.date, payload.idKey);
+    } else {
+      return handleSaveOrganik(ss, payload.data || payload);
+    }
+
+  } catch (err) {
+    return jsonResponse({
+      status: "error",
+      message: "Gagal memproses request POST: " + err.toString()
+    });
+  }
+}
+
+function handleSaveOrganik(ss, record) {
+  if (!record || !record.date || !record.kelurahanId) {
+    return jsonResponse({
+      status: "error",
+      message: "Data tidak valid. Wajib menyertakan date (YYYY-MM-DD) dan kelurahanId."
+    });
+  }
+
+  var sheet = ss.getSheetByName("INPUT_HARIAN");
+  if (!sheet) {
+    return jsonResponse({ status: "error", message: "Sheet INPUT_HARIAN tidak ditemukan." });
+  }
+
+  var data = sheet.getDataRange().getValues();
+  var targetRowIndex = -1;
+
+  var dateStr = String(record.date).trim();
+  var kelStr = String(record.kelurahanId).trim().toUpperCase();
+
+  for (var i = 1; i < data.length; i++) {
+    var rDate = data[i][1];
+    if (rDate instanceof Date) {
+      rDate = Utilities.formatDate(rDate, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
+    } else {
+      rDate = String(rDate).trim();
+    }
+
+    var rKel = String(data[i][2] || data[i][3]).trim().toUpperCase();
+
+    if (rDate === dateStr && (rKel.indexOf(kelStr) !== -1 || kelStr.indexOf(rKel) !== -1)) {
+      targetRowIndex = i + 1;
+      break;
+    }
+  }
+
+  var comp = record.composition || {};
+  var pakanArr = record.pakanInputs || [];
+  var pakanWeight = 0;
+  var pakanNames = [];
+
+  for (var p = 0; p < pakanArr.length; p++) {
+    if (pakanArr[p].weightKg) {
+      pakanWeight += Number(pakanArr[p].weightKg);
+      if (pakanArr[p].collectorName) {
+        pakanNames.push(pakanArr[p].collectorName + " (" + pakanArr[p].weightKg + "Kg)");
+      }
+    }
+  }
+
+  var collectorStr = pakanNames.length > 0 ? pakanNames.join(", ") : "-";
+
+  if (targetRowIndex > 0) {
+    sheet.getRange(targetRowIndex, 5).setValue(comp.makananTpa || 0);
+    sheet.getRange(targetRowIndex, 6).setValue(comp.makananTps3r || 0);
+    sheet.getRange(targetRowIndex, 7).setValue(comp.sisaBuahTpa || 0);
+    sheet.getRange(targetRowIndex, 8).setValue(comp.sisaBuahTps3r || 0);
+    sheet.getRange(targetRowIndex, 9).setValue(comp.sisaSayurTpa || 0);
+    sheet.getRange(targetRowIndex, 10).setValue(comp.sisaSayurTps3r || 0);
+    sheet.getRange(targetRowIndex, 11).setValue(comp.daunTpa || 0);
+    sheet.getRange(targetRowIndex, 12).setValue(comp.daunTps3r || 0);
+    sheet.getRange(targetRowIndex, 13).setValue(collectorStr);
+    sheet.getRange(targetRowIndex, 14).setValue(pakanWeight);
+    sheet.getRange(targetRowIndex, 19).setValue(record.submittedBy || "Web Admin");
+
+    sheet.getRange(targetRowIndex, 15).setFormula("=E" + targetRowIndex + "+G" + targetRowIndex + "+I" + targetRowIndex + "+K" + targetRowIndex);
+    sheet.getRange(targetRowIndex, 16).setFormula("=F" + targetRowIndex + "+H" + targetRowIndex + "+J" + targetRowIndex + "+L" + targetRowIndex);
+    sheet.getRange(targetRowIndex, 17).setFormula("=N" + targetRowIndex);
+    sheet.getRange(targetRowIndex, 18).setFormula("=O" + targetRowIndex + "+P" + targetRowIndex + "+Q" + targetRowIndex);
+
+    return jsonResponse({
+      status: "success",
+      message: "Berhasil memperbarui data Organik Kelurahan " + kelStr + " tanggal " + dateStr + " di Google Sheets!",
+      rowIndex: targetRowIndex
+    });
+  } else {
+    var newNo = data.length;
+    var rowNum = data.length + 1;
+
+    sheet.appendRow([
+      newNo,
+      dateStr,
+      kelStr,
+      "Kelurahan " + kelStr,
+      comp.makananTpa || 0,
+      comp.makananTps3r || 0,
+      comp.sisaBuahTpa || 0,
+      comp.sisaBuahTps3r || 0,
+      comp.sisaSayurTpa || 0,
+      comp.sisaSayurTps3r || 0,
+      comp.daunTpa || 0,
+      comp.daunTps3r || 0,
+      collectorStr,
+      pakanWeight,
+      "=E" + rowNum + "+G" + rowNum + "+I" + rowNum + "+K" + rowNum,
+      "=F" + rowNum + "+H" + rowNum + "+J" + rowNum + "+L" + rowNum,
+      "=N" + rowNum,
+      "=O" + rowNum + "+P" + rowNum + "+Q" + rowNum,
+      record.submittedBy || "Web Admin",
+      "Diinput via Web App SIPESAT"
+    ]);
+
+    return jsonResponse({
+      status: "success",
+      message: "Berhasil menambahkan baris Organik baru untuk Kelurahan " + kelStr + " di Google Sheets!",
+      rowIndex: rowNum
+    });
+  }
+}
+
+function handleSaveAnorganik(ss, record) {
+  if (!record || !record.date || !record.kelurahanId) {
+    return jsonResponse({ status: "error", message: "Parameter date & kelurahanId wajib diisi." });
+  }
+
+  var sheet = ss.getSheetByName("REKAP_ANORGANIK");
+  if (!sheet) {
+    sheet = ss.insertSheet("REKAP_ANORGANIK");
+    sheet.appendRow(["Tanggal", "Kelurahan", "Satgas_Mobil_Kg", "Satgas_Fukuda_Kg", "Total_Anorganik_Kg"]);
+  }
+
+  var data = sheet.getDataRange().getValues();
+  var dateStr = String(record.date).trim();
+  var kelStr = String(record.kelurahanId).trim().toUpperCase();
+  var mobil = Number(record.satgasMobilKg || 0);
+  var fukuda = Number(record.satgasFukudaKg || 0);
+  var total = mobil + fukuda;
+
+  var targetRowIndex = -1;
+  for (var i = 1; i < data.length; i++) {
+    var rDate = data[i][0];
+    if (rDate instanceof Date) {
+      rDate = Utilities.formatDate(rDate, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
+    } else {
+      rDate = String(rDate).trim();
+    }
+    var rKel = String(data[i][1]).trim().toUpperCase();
+
+    if (rDate === dateStr && rKel === kelStr) {
+      targetRowIndex = i + 1;
+      break;
+    }
+  }
+
+  if (targetRowIndex > 0) {
+    sheet.getRange(targetRowIndex, 3).setValue(mobil);
+    sheet.getRange(targetRowIndex, 4).setValue(fukuda);
+    sheet.getRange(targetRowIndex, 5).setValue(total);
+    return jsonResponse({ status: "success", message: "Data Anorganik Kelurahan " + kelStr + " diperbarui!" });
+  } else {
+    sheet.appendRow([dateStr, kelStr, mobil, fukuda, total]);
+    return jsonResponse({ status: "success", message: "Data Anorganik Kelurahan " + kelStr + " ditambahkan!" });
+  }
+}
+
+function handleSaveResidu(ss, record) {
+  if (!record || !record.date || !record.kelurahanId) {
+    return jsonResponse({ status: "error", message: "Parameter date & kelurahanId wajib diisi." });
+  }
+
+  var sheet = ss.getSheetByName("REKAP_RESIDU");
+  if (!sheet) {
+    sheet = ss.insertSheet("REKAP_RESIDU");
+    sheet.appendRow(["Tanggal", "Kelurahan", "Berat_Residu_Kg", "Lokasi_TPA"]);
+  }
+
+  var data = sheet.getDataRange().getValues();
+  var dateStr = String(record.date).trim();
+  var kelStr = String(record.kelurahanId).trim().toUpperCase();
+  var berat = Number(record.beratKg || 0);
+
+  var targetRowIndex = -1;
+  for (var i = 1; i < data.length; i++) {
+    var rDate = data[i][0];
+    if (rDate instanceof Date) {
+      rDate = Utilities.formatDate(rDate, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
+    } else {
+      rDate = String(rDate).trim();
+    }
+    var rKel = String(data[i][1]).trim().toUpperCase();
+
+    if (rDate === dateStr && rKel === kelStr) {
+      targetRowIndex = i + 1;
+      break;
+    }
+  }
+
+  if (targetRowIndex > 0) {
+    sheet.getRange(targetRowIndex, 3).setValue(berat);
+    return jsonResponse({ status: "success", message: "Data Residu Kelurahan " + kelStr + " diperbarui!" });
+  } else {
+    sheet.appendRow([dateStr, kelStr, berat, record.catatan || "TPA Tamangapa Antang"]);
+    return jsonResponse({ status: "success", message: "Data Residu Kelurahan " + kelStr + " ditambahkan!" });
+  }
+}
+
+function handleSaveHoreka(ss, record) {
+  if (!record || !record.date || (!record.horekaId && !record.namaUsaha)) {
+    return jsonResponse({ status: "error", message: "Parameter date & horekaId/namaUsaha wajib diisi." });
+  }
+
+  var sheet = ss.getSheetByName("DATA_HOREKA_147");
+  if (!sheet) {
+    sheet = ss.insertSheet("DATA_HOREKA_147");
+    sheet.appendRow(["No", "Tanggal", "Nama_Usaha", "Kelurahan", "Alamat", "Organik_Kg", "Anorganik_Kg", "Residu_Kg", "Total_Kg"]);
+  }
+
+  var data = sheet.getDataRange().getValues();
+  var dateStr = String(record.date).trim();
+  var namaUsahaStr = String(record.namaUsaha || record.horekaId).trim().toUpperCase();
+
+  var org = Number(record.organikKg || 0);
+  var anorg = Number(record.anorganikKg || 0);
+  var res = Number(record.residuKg || 0);
+  var total = org + anorg + res;
+
+  var targetRowIndex = -1;
+  for (var i = 1; i < data.length; i++) {
+    var rDate = data[i][1];
+    if (rDate instanceof Date) {
+      rDate = Utilities.formatDate(rDate, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
+    } else {
+      rDate = String(rDate).trim();
+    }
+    var rNama = String(data[i][2]).trim().toUpperCase();
+
+    if (rDate === dateStr && (rNama === namaUsahaStr || rNama.indexOf(namaUsahaStr) !== -1)) {
+      targetRowIndex = i + 1;
+      break;
+    }
+  }
+
+  if (targetRowIndex > 0) {
+    sheet.getRange(targetRowIndex, 6).setValue(org);
+    sheet.getRange(targetRowIndex, 7).setValue(anorg);
+    sheet.getRange(targetRowIndex, 8).setValue(res);
+    sheet.getRange(targetRowIndex, 9).setValue(total);
+    return jsonResponse({ status: "success", message: "Data Horeka " + namaUsahaStr + " diperbarui!" });
+  } else {
+    var newNo = data.length;
+    sheet.appendRow([
+      newNo,
+      dateStr,
+      record.namaUsaha || record.horekaId,
+      record.kelurahanId || "UJUNG PANDANG",
+      record.alamat || "-",
+      org,
+      anorg,
+      res,
+      total
+    ]);
+    return jsonResponse({ status: "success", message: "Data Horeka " + namaUsahaStr + " ditambahkan!" });
+  }
+}
+
+function handleDeleteRow(ss, sheetName, dateStr, idKey) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return jsonResponse({ status: "error", message: "Sheet tidak ditemukan." });
+
+  var data = sheet.getDataRange().getValues();
+  for (var i = data.length - 1; i >= 1; i--) {
+    var rDate = data[i][0] || data[i][1];
+    if (rDate instanceof Date) {
+      rDate = Utilities.formatDate(rDate, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
+    } else {
+      rDate = String(rDate).trim();
+    }
+
+    var rKey = String(data[i][1] || data[i][2] || data[i][3]).trim().toUpperCase();
+
+    if (rDate === String(dateStr).trim() && (rKey === String(idKey).trim().toUpperCase() || idKey === "ALL")) {
+      sheet.deleteRow(i + 1);
+      return jsonResponse({ status: "success", message: "Baris data berhasil dihapus dari Google Sheets." });
+    }
+  }
+
+  return jsonResponse({ status: "error", message: "Data tidak ditemukan untuk dihapus." });
+}
+`;
 
 /**
  * Robust CSV parser handling quotes and commas
@@ -87,7 +507,6 @@ export async function fetchGoogleSheetsRecords(
 
       if (!date || !rawKel) continue;
 
-      // Find matching kelurahan ID
       const matchedKel = validKelurahanIds.find((id) => {
         const meta = KELURAHAN_LIST.find((k) => k.id === id);
         return (
@@ -124,7 +543,6 @@ export async function fetchGoogleSheetsRecords(
 
       const pakanInputs: PakanCollectorInput[] = [];
       if (pakanWeight > 0) {
-        // Parse collector name(s)
         pakanInputs.push({
           collectorId: `col-${matchedKel.toLowerCase()}`,
           collectorName: rawCollector !== '-' ? rawCollector : 'Petugas Pakan',
@@ -160,7 +578,184 @@ export async function fetchGoogleSheetsRecords(
 }
 
 /**
- * Send new record to Google Apps Script Web App
+ * Fetch Anorganik records from Google Sheets REKAP_ANORGANIK
+ */
+export async function fetchAnorganikSheetsRecords(
+  spreadsheetId = DEFAULT_SPREADSHEET_ID
+): Promise<{ success: boolean; records: AnorganikDailyRecord[]; error?: string }> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=REKAP_ANORGANIK`;
+    const response = await fetch(url);
+    if (!response.ok) return { success: false, records: [] };
+    const csvText = await response.text();
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) return { success: true, records: [] };
+
+    const records: AnorganikDailyRecord[] = [];
+    const validKelurahanIds: KelurahanId[] = [
+      'BARU',
+      'BULOGADING',
+      'LAE-LAE',
+      'LAJANGIRU',
+      'LOSARI',
+      'MALOKU',
+      'MANGKURA',
+      'PISANG SELATAN',
+      'PISANG UTARA',
+      'SAWERIGADING',
+    ];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      if (cols.length < 3) continue;
+      const date = cols[0]?.replace(/['"]/g, '').trim();
+      const rawKel = cols[1]?.replace(/['"]/g, '').trim().toUpperCase();
+      if (!date || !rawKel) continue;
+
+      const satgasMobilKg = Number(cols[2]?.replace(/['"]/g, '').trim()) || 0;
+      const satgasFukudaKg = Number(cols[3]?.replace(/['"]/g, '').trim()) || 0;
+      const totalKg = Number(cols[4]?.replace(/['"]/g, '').trim()) || (satgasMobilKg + satgasFukudaKg);
+
+      const matchedKel = validKelurahanIds.find((id) => rawKel.includes(id) || rawKel === id);
+      if (!matchedKel) continue;
+
+      records.push({
+        id: `${date}_${matchedKel}`,
+        date,
+        kelurahanId: matchedKel,
+        satgasMobilKg,
+        satgasFukudaKg,
+        totalKg,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return { success: true, records };
+  } catch (err: any) {
+    return { success: false, records: [], error: err?.message };
+  }
+}
+
+/**
+ * Fetch Residu records from Google Sheets REKAP_RESIDU
+ */
+export async function fetchResiduSheetsRecords(
+  spreadsheetId = DEFAULT_SPREADSHEET_ID
+): Promise<{ success: boolean; records: ResiduRecord[]; error?: string }> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=REKAP_RESIDU`;
+    const response = await fetch(url);
+    if (!response.ok) return { success: false, records: [] };
+    const csvText = await response.text();
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) return { success: true, records: [] };
+
+    const records: ResiduRecord[] = [];
+    const validKelurahanIds: KelurahanId[] = [
+      'BARU',
+      'BULOGADING',
+      'LAE-LAE',
+      'LAJANGIRU',
+      'LOSARI',
+      'MALOKU',
+      'MANGKURA',
+      'PISANG SELATAN',
+      'PISANG UTARA',
+      'SAWERIGADING',
+    ];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      if (cols.length < 3) continue;
+      const date = cols[0]?.replace(/['"]/g, '').trim();
+      const rawKel = cols[1]?.replace(/['"]/g, '').trim().toUpperCase();
+      if (!date || !rawKel) continue;
+
+      const beratKg = Number(cols[2]?.replace(/['"]/g, '').trim()) || 0;
+      const catatan = cols[3]?.replace(/['"]/g, '').trim() || '';
+
+      const matchedKel = validKelurahanIds.find((id) => rawKel.includes(id) || rawKel === id);
+      if (!matchedKel) continue;
+
+      records.push({
+        id: `${date}_${matchedKel}`,
+        date,
+        kelurahanId: matchedKel,
+        beratKg,
+        catatan,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return { success: true, records };
+  } catch (err: any) {
+    return { success: false, records: [], error: err?.message };
+  }
+}
+
+/**
+ * Fetch Horeka records from Google Sheets DATA_HOREKA_147
+ */
+export async function fetchHorekaSheetsRecords(
+  spreadsheetId = DEFAULT_SPREADSHEET_ID
+): Promise<{ success: boolean; records: HorekaDailyRecord[]; error?: string }> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=DATA_HOREKA_147`;
+    const response = await fetch(url);
+    if (!response.ok) return { success: false, records: [] };
+    const csvText = await response.text();
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) return { success: true, records: [] };
+
+    const records: HorekaDailyRecord[] = [];
+    const validKelurahanIds: KelurahanId[] = [
+      'BARU',
+      'BULOGADING',
+      'LAE-LAE',
+      'LAJANGIRU',
+      'LOSARI',
+      'MALOKU',
+      'MANGKURA',
+      'PISANG SELATAN',
+      'PISANG UTARA',
+      'SAWERIGADING',
+    ];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      if (cols.length < 8) continue;
+      const date = cols[1]?.replace(/['"]/g, '').trim();
+      const namaUsaha = cols[2]?.replace(/['"]/g, '').trim();
+      const kelurahanStr = cols[3]?.replace(/['"]/g, '').trim().toUpperCase();
+      if (!date || !namaUsaha) continue;
+
+      const organikKg = Number(cols[5]?.replace(/['"]/g, '').trim()) || 0;
+      const anorganikKg = Number(cols[6]?.replace(/['"]/g, '').trim()) || 0;
+      const residuKg = Number(cols[7]?.replace(/['"]/g, '').trim()) || 0;
+
+      const matchedKel = validKelurahanIds.find((id) => kelurahanStr.includes(id) || kelurahanStr === id) || 'LOSARI';
+
+      const business = HOREKA_BUSINESSES.find(
+        (b) => b.namaUsaha.toUpperCase() === namaUsaha.toUpperCase()
+      );
+      const horekaId = business ? business.id : `hor-${namaUsaha.toLowerCase().replace(/\s+/g, '-')}`;
+
+      records.push({
+        date,
+        horekaId,
+        kelurahanId: matchedKel,
+        organikKg,
+        anorganikKg,
+        residuKg,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return { success: true, records };
+  } catch (err: any) {
+    return { success: false, records: [], error: err?.message };
+  }
+}
+
+/**
+ * Push Organik record to Google Apps Script
  */
 export async function pushRecordToGoogleAppsScript(
   scriptUrl: string,
@@ -180,12 +775,11 @@ export async function pushRecordToGoogleAppsScript(
   }
 
   const payload = JSON.stringify({
-    action: 'saveRecord',
+    action: 'saveOrganik',
     data: record,
   });
 
   try {
-    // text/plain avoids CORS preflight OPTIONS in Google Apps Script
     const response = await fetch(scriptUrl, {
       method: 'POST',
       headers: {
@@ -196,41 +790,12 @@ export async function pushRecordToGoogleAppsScript(
 
     const responseText = await response.text();
 
-    // Check for Google Apps Script HTML error output
     if (
       responseText.includes('ReferenceError') ||
       responseText.includes('jsonResponse is not defined') ||
-      responseText.includes('找不到以下指令碼函式') ||
       responseText.includes('Script function not found') ||
-      responseText.includes('<title>錯誤</title>') ||
-      responseText.includes('<title>Error</title>') ||
       responseText.includes('Exception:')
     ) {
-      if (
-        responseText.includes('jsonResponse is not defined') ||
-        responseText.includes('ReferenceError')
-      ) {
-        return {
-          success: false,
-          isScriptError: true,
-          message:
-            'Google Apps Script Error: "ReferenceError: jsonResponse is not defined". Kode di Google Apps Script Anda terpotong (hanya sampai baris 92). Harap salin seluruh kode (324 baris) lalu buat "Versi Baru" pada deployment.',
-        };
-      }
-
-      if (
-        responseText.includes('找不到以下指令碼函式') ||
-        responseText.includes('Script function not found') ||
-        responseText.includes('doPost')
-      ) {
-        return {
-          success: false,
-          isScriptError: true,
-          message:
-            'Fungsi doPost belum terpasang di deployment aktif Google Apps Script. Harap perbarui deployment ke Versi Baru.',
-        };
-      }
-
       return {
         success: false,
         isScriptError: true,
@@ -243,7 +808,7 @@ export async function pushRecordToGoogleAppsScript(
       if (result.status === 'success' || result.success === true) {
         return {
           success: true,
-          message: result.message || 'Data berhasil dikirim dan tersimpan di sheet INPUT_HARIAN Google Spreadsheet!',
+          message: result.message || 'Data Organik berhasil tersimpan di Google Spreadsheet!',
         };
       } else {
         return {
@@ -252,10 +817,9 @@ export async function pushRecordToGoogleAppsScript(
         };
       }
     } catch {
-      // If HTTP 200 returned without error signature
       return {
         success: true,
-        message: 'Data berhasil terkirim ke Google Apps Script.',
+        message: 'Data Organik berhasil terkirim ke Google Apps Script.',
       };
     }
   } catch (err: any) {
@@ -268,7 +832,141 @@ export async function pushRecordToGoogleAppsScript(
 }
 
 /**
- * Test connectivity with Google Apps Script Web App (Checks both GET and POST)
+ * Push Anorganik record to Google Apps Script
+ */
+export async function pushAnorganikToGoogleAppsScript(
+  scriptUrl: string,
+  record: {
+    date: string;
+    kelurahanId: KelurahanId;
+    satgasMobilKg: number;
+    satgasFukudaKg: number;
+    catatan?: string;
+    submittedBy?: string;
+  }
+): Promise<{ success: boolean; message: string; isScriptError?: boolean }> {
+  if (!scriptUrl || scriptUrl.trim().length === 0) {
+    return { success: false, message: 'URL Google Apps Script belum disetel.' };
+  }
+  const payload = JSON.stringify({
+    action: 'saveAnorganik',
+    data: record,
+  });
+
+  try {
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload,
+    });
+    const responseText = await response.text();
+    try {
+      const result = JSON.parse(responseText);
+      if (result.status === 'success' || result.success === true) {
+        return { success: true, message: result.message || 'Data Anorganik tersimpan di Google Spreadsheet!' };
+      } else {
+        return { success: false, message: result.message || 'Gagal menyimpan Anorganik di Google Sheets.' };
+      }
+    } catch {
+      return { success: true, message: 'Data Anorganik dikirim ke Google Apps Script.' };
+    }
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal menghubungi Google Apps Script.' };
+  }
+}
+
+/**
+ * Push Residu record to Google Apps Script
+ */
+export async function pushResiduToGoogleAppsScript(
+  scriptUrl: string,
+  record: {
+    date: string;
+    kelurahanId: KelurahanId;
+    beratKg: number;
+    catatan?: string;
+    submittedBy?: string;
+  }
+): Promise<{ success: boolean; message: string; isScriptError?: boolean }> {
+  if (!scriptUrl || scriptUrl.trim().length === 0) {
+    return { success: false, message: 'URL Google Apps Script belum disetel.' };
+  }
+  const payload = JSON.stringify({
+    action: 'saveResidu',
+    data: record,
+  });
+
+  try {
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload,
+    });
+    const responseText = await response.text();
+    try {
+      const result = JSON.parse(responseText);
+      if (result.status === 'success' || result.success === true) {
+        return { success: true, message: result.message || 'Data Residu tersimpan di Google Spreadsheet!' };
+      } else {
+        return { success: false, message: result.message || 'Gagal menyimpan Residu di Google Sheets.' };
+      }
+    } catch {
+      return { success: true, message: 'Data Residu dikirim ke Google Apps Script.' };
+    }
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal menghubungi Google Apps Script.' };
+  }
+}
+
+/**
+ * Push Horeka record to Google Apps Script
+ */
+export async function pushHorekaToGoogleAppsScript(
+  scriptUrl: string,
+  record: {
+    date: string;
+    horekaId: string;
+    namaUsaha: string;
+    kelurahanId: string;
+    alamat: string;
+    organikKg: number;
+    anorganikKg: number;
+    residuKg: number;
+    operatorName?: string;
+  }
+): Promise<{ success: boolean; message: string; isScriptError?: boolean }> {
+  if (!scriptUrl || scriptUrl.trim().length === 0) {
+    return { success: false, message: 'URL Google Apps Script belum disetel.' };
+  }
+  const payload = JSON.stringify({
+    action: 'saveHoreka',
+    data: record,
+  });
+
+  try {
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: payload,
+    });
+    const responseText = await response.text();
+    try {
+      const result = JSON.parse(responseText);
+      if (result.status === 'success' || result.success === true) {
+        return { success: true, message: result.message || 'Data Horeka tersimpan di Google Spreadsheet!' };
+      } else {
+        return { success: false, message: result.message || 'Gagal menyimpan Horeka di Google Sheets.' };
+      }
+    } catch {
+      return { success: true, message: 'Data Horeka dikirim ke Google Apps Script.' };
+    }
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal menghubungi Google Apps Script.' };
+  }
+}
+
+/**
+ * Test connectivity with Google Apps Script Web App
  */
 export async function testAppsScriptConnection(
   scriptUrl: string
@@ -286,50 +984,14 @@ export async function testAppsScriptConnection(
   }
 
   try {
-    // 1. Test POST endpoint
-    try {
-      const postRes = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify({ action: 'ping' }),
-      });
-      const postText = await postRes.text();
-
-      if (postText.includes('ReferenceError') || postText.includes('jsonResponse is not defined')) {
-        return {
-          success: false,
-          status: 'reference_error',
-          message:
-            'MASALAH TERDETEKSI: Kode di editor Google Sheets Anda terpotong (ReferenceError: jsonResponse is not defined di baris 92). Fungsi jsonResponse dan doPost belum ada di script Anda. Silakan salin ulang seluruh kode lalu Deploy Versi Baru.',
-        };
-      }
-    } catch (e) {
-      console.warn('POST pre-test caught error:', e);
-    }
-
-    // 2. Test GET endpoint
-    const res = await fetch(`${scriptUrl}?action=getAll`, {
-      method: 'GET',
-    });
-
+    const res = await fetch(`${scriptUrl}?action=getAll`, { method: 'GET' });
     const text = await res.text();
 
     if (text.includes('ReferenceError') || text.includes('jsonResponse is not defined')) {
       return {
         success: false,
         status: 'reference_error',
-        message:
-          'MASALAH TERDETEKSI: Kode di Google Sheets Anda menghasilkan "ReferenceError: jsonResponse is not defined". Harap salin seluruh kode (324 baris) lalu buat "Versi Baru" pada deployment.',
-      };
-    }
-
-    if (text.includes('doGet') || text.includes('找不到以下指令碼函式') || text.includes('Script function not found')) {
-      return {
-        success: false,
-        status: 'missing_doget',
-        message: 'Web App terhubung, namun fungsi doGet belum aktif di versi deployment Anda.',
+        message: 'Kode di Google Sheets Anda menghasilkan ReferenceError.',
       };
     }
 
@@ -339,7 +1001,7 @@ export async function testAppsScriptConnection(
         return {
           success: true,
           status: 'active',
-          message: `Koneksi Sempurna! Web App aktif dan siap menerima data input (${data.totalRecords ?? data.records?.length ?? 0} data terbaca).`,
+          message: `Koneksi Sempurna! Web App aktif (${data.totalRecords ?? 0} data terbaca).`,
         };
       }
     } catch {}
@@ -353,14 +1015,11 @@ export async function testAppsScriptConnection(
     return {
       success: false,
       status: 'unreachable',
-      message: 'Tidak dapat menjangkau Web App. Periksa izin akses (Anyone / Siapa Saja) pada deployment Google Apps Script Anda.',
+      message: 'Tidak dapat menjangkau Web App. Periksa izin akses (Anyone / Siapa Saja) pada Google Apps Script Anda.',
     };
   }
 }
 
-/**
- * Uji coba langsung kirim 1 baris data tes ke Google Spreadsheet
- */
 export async function sendTestRecordToGoogleSheets(scriptUrl: string) {
   return pushRecordToGoogleAppsScript(scriptUrl, {
     date: '2026-10-21',
@@ -385,3 +1044,4 @@ export async function sendTestRecordToGoogleSheets(scriptUrl: string) {
     submittedBy: 'Uji Coba Web SAPU-UP',
   });
 }
+

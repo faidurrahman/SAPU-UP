@@ -130,3 +130,53 @@ export interface OfficialDailyReportData {
   whatsAppText: string;
 }
 
+export interface ResiduRecord {
+  id: string;
+  date: string;
+  kelurahanId: KelurahanId;
+  beratKg: number;
+  armadaType?: string;
+  nomorArmada?: string;
+  jamPengangkutan?: string;
+  catatan?: string;
+  updatedAt: string;
+  submittedBy?: string;
+}
+
+export interface AnorganikRecord {
+  id: string;
+  date: string;
+  kelurahanId: KelurahanId;
+  plastikKg: number;
+  kertasKartonKg: number;
+  logamKalengKg: number;
+  kacaBotolKg: number;
+  minyakJelantahKg: number;
+  totalKg: number;
+  bankSampahName?: string;
+  catatan?: string;
+  updatedAt: string;
+  submittedBy?: string;
+}
+
+export interface AnorganikDailyRecord {
+  id: string; // `${date}_${kelurahanId}`
+  date: string; // YYYY-MM-DD
+  kelurahanId: KelurahanId;
+  satgasMobilKg: number;
+  satgasFukudaKg: number;
+  totalKg: number;
+  catatan?: string;
+  updatedAt: string;
+  submittedBy?: string;
+}
+
+export interface AnorganikMatrixRow {
+  no: number;
+  kelurahanId: KelurahanId;
+  kelurahanName: string;
+  dailyKg: { [day: number]: number };
+  totalKg: number;
+}
+
+

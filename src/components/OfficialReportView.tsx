@@ -36,8 +36,8 @@ export const OfficialReportView: React.FC = () => {
     isSyncing,
   } = useWasteData();
 
-  // Selected date, defaulting to 2026-10-20 (the exact date requested by the user)
-  const [selectedDate, setSelectedDate] = useState<string>('2026-10-20');
+  // Selected date
+  const [selectedDate, setSelectedDate] = useState<string>('2026-10-22');
   const [copied, setCopied] = useState<boolean>(false);
   const [isEditingPengelolaan, setIsEditingPengelolaan] = useState<boolean>(false);
   const [showAllKelurahan, setShowAllKelurahan] = useState<boolean>(false);

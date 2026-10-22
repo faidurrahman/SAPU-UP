@@ -7,16 +7,18 @@ import { Filter, Calendar, MapPin, Download } from 'lucide-react';
 export const FilterBar: React.FC = () => {
   const { filter, setFilter, exportToCsv, filteredRecords, executiveSummary } = useWasteData();
 
+  const todayStr = '2026-10-22';
+
   const handlePreset = (preset: 'resmi' | 'last7' | 'today' | 'fullMonth') => {
     switch (preset) {
       case 'resmi':
-        setFilter({ startDate: '2026-10-01', endDate: '2026-10-21' });
+        setFilter({ startDate: '2026-10-01', endDate: todayStr });
         break;
       case 'last7':
-        setFilter({ startDate: '2026-10-15', endDate: '2026-10-21' });
+        setFilter({ startDate: '2026-10-16', endDate: todayStr });
         break;
       case 'today':
-        setFilter({ startDate: '2026-10-21', endDate: '2026-10-21' });
+        setFilter({ startDate: todayStr, endDate: todayStr });
         break;
       case 'fullMonth':
         setFilter({ startDate: '2026-10-01', endDate: '2026-10-31' });
@@ -24,9 +26,9 @@ export const FilterBar: React.FC = () => {
     }
   };
 
-  const isResmi = filter.startDate === '2026-10-01' && filter.endDate === '2026-10-21';
-  const isLast7 = filter.startDate === '2026-10-15' && filter.endDate === '2026-10-21';
-  const isToday = filter.startDate === '2026-10-21' && filter.endDate === '2026-10-21';
+  const isResmi = filter.startDate === '2026-10-01' && filter.endDate === todayStr;
+  const isLast7 = filter.startDate === '2026-10-16' && filter.endDate === todayStr;
+  const isToday = filter.startDate === todayStr && filter.endDate === todayStr;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200/90 p-4 shadow-xs mb-6 no-print">
@@ -48,7 +50,7 @@ export const FilterBar: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Oktober (1–21 Okt)
+              Oktober (1–22 Okt)
             </button>
             <button
               onClick={() => handlePreset('last7')}
@@ -68,7 +70,7 @@ export const FilterBar: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Hari Ini (21 Okt)
+              Hari Ini (22 Okt)
             </button>
           </div>
 

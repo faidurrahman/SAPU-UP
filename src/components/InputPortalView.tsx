@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useWasteData } from '../context/WasteDataContext';
 import { KELURAHAN_LIST } from '../data/initialData';
 import { KelurahanId, WasteComposition, PakanCollectorInput } from '../types/waste';
@@ -15,41 +15,47 @@ import {
   Trash2,
   ArrowRight,
   Info,
-  Download,
-  ExternalLink,
   RefreshCw,
-  Code2,
+  Leaf,
+  Recycle,
+  Truck,
+  Scale,
+  Sparkles,
+  Store,
 } from 'lucide-react';
-import { GoogleSheetsSyncModal } from './GoogleSheetsSyncModal';
 import { ScrollReveal } from './ScrollReveal';
 
 export const InputPortalView: React.FC = () => {
   const {
     records,
     collectors,
+    residuRecords,
+    anorganikRecords,
+    anorganikDailyRecords,
+    horekaBusinesses,
+    horekaDailyRecords,
     saveDailyRecord,
+    saveResiduRecord,
+    saveAnorganikRecord,
+    saveAnorganikDailyRecord,
+    saveHorekaDailyRecord,
     addCollector,
     getRecordForDateAndKelurahan,
     getComplianceForDate,
     preselectedInputKelurahan,
-    setPreselectedInputKelurahan,
     setActiveTab,
-    exportToExcel,
-    googleSheetsId,
-    syncFromGoogleSheets,
-    isSyncing,
     isSavingToSheets,
-    lastPushResult,
+    activeInputSubTab,
+    setActiveInputSubTab,
   } = useWasteData();
 
   // Selected date and kelurahan
-  const [selectedDate, setSelectedDate] = useState<string>('2026-10-21');
+  const [selectedDate, setSelectedDate] = useState<string>('2026-10-22');
   const [selectedKelurahan, setSelectedKelurahan] = useState<KelurahanId>(
     preselectedInputKelurahan || 'BULOGADING'
   );
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
 
-  // Form states
+  // --- FORM STATE: ORGANIK ---
   const [composition, setComposition] = useState<WasteComposition>({
     makananTpa: 0,
     makananTps3r: 0,
@@ -60,38 +66,47 @@ export const InputPortalView: React.FC = () => {
     daunTpa: 0,
     daunTps3r: 0,
   });
-
   const [pakanInputs, setPakanInputs] = useState<PakanCollectorInput[]>([]);
   const [operatorName, setOperatorName] = useState<string>('Petugas Kebersihan Kelurahan');
   const [showAddCollectorModal, setShowAddCollectorModal] = useState<boolean>(false);
   const [newCollectorName, setNewCollectorName] = useState<string>('');
   const [newCollectorPhone, setNewCollectorPhone] = useState<string>('');
-  const [isExistingRecord, setIsExistingRecord] = useState<boolean>(false);
+  const [isExistingOrganik, setIsExistingOrganik] = useState<boolean>(false);
 
-  // When preselectedInputKelurahan changes from outside
+  // --- FORM STATE: ANORGANIK (Satgas Mobil & Satgas Fukuda) ---
+  const [satgasMobilKg, setSatgasMobilKg] = useState<number>(0);
+  const [satgasFukudaKg, setSatgasFukudaKg] = useState<number>(0);
+  const [anorganikNotes, setAnorganikNotes] = useState<string>('');
+
+  // --- FORM STATE: RESIDU ---
+  const [beratResiduKg, setBeratResiduKg] = useState<number>(0);
+  const [armadaType, setArmadaType] = useState<string>('Truk Kontainer DLH');
+  const [nomorArmada, setNomorArmada] = useState<string>('DD 8001 UP');
+  const [jamPengangkutan, setJamPengangkutan] = useState<string>('06:30 - 08:00 WITA');
+  const [residuCatatan, setResiduCatatan] = useState<string>('');
+
+  // Sync preselected kelurahan
   useEffect(() => {
     if (preselectedInputKelurahan) {
       setSelectedKelurahan(preselectedInputKelurahan);
     }
   }, [preselectedInputKelurahan]);
 
-  // Load existing data or initialize when date or kelurahan changes
+  // Load existing ORGANIK data
   useEffect(() => {
     const existing = getRecordForDateAndKelurahan(selectedDate, selectedKelurahan);
-
-    // Filter collectors for this kelurahan
     const kelCollectors = collectors.filter(
       (c) => c.kelurahanId === selectedKelurahan && c.active
     );
 
     if (existing) {
-      setIsExistingRecord(true);
+      setIsExistingOrganik(true);
       setComposition(existing.composition);
       setOperatorName(existing.submittedBy || `Petugas ${selectedKelurahan}`);
-
-      // Map collectors including existing weights
       const mappedPakan: PakanCollectorInput[] = kelCollectors.map((c) => {
-        const found = existing.pakanInputs?.find((p) => p.collectorId === c.id || p.collectorName === c.name);
+        const found = existing.pakanInputs?.find(
+          (p) => p.collectorId === c.id || p.collectorName === c.name
+        );
         return {
           collectorId: c.id,
           collectorName: c.name,
@@ -100,7 +115,7 @@ export const InputPortalView: React.FC = () => {
       });
       setPakanInputs(mappedPakan);
     } else {
-      setIsExistingRecord(false);
+      setIsExistingOrganik(false);
       setComposition({
         makananTpa: 0,
         makananTps3r: 0,
@@ -111,53 +126,54 @@ export const InputPortalView: React.FC = () => {
         daunTpa: 0,
         daunTps3r: 0,
       });
-      setOperatorName(`Petugas Kebersihan Kel. ${selectedKelurahan}`);
-
-      const initialPakan: PakanCollectorInput[] = kelCollectors.map((c) => ({
-        collectorId: c.id,
-        collectorName: c.name,
-        weightKg: 0,
-      }));
-      setPakanInputs(initialPakan);
+      setPakanInputs(
+        kelCollectors.map((c) => ({
+          collectorId: c.id,
+          collectorName: c.name,
+          weightKg: 0,
+        }))
+      );
     }
-  }, [selectedDate, selectedKelurahan, collectors, records]);
+  }, [selectedDate, selectedKelurahan, records, collectors]);
 
-  // Handle number input change for composition
-  const handleCompChange = (field: keyof WasteComposition, value: string) => {
-    const num = Math.max(0, parseFloat(value) || 0);
-    setComposition((prev) => ({
-      ...prev,
-      [field]: num,
-    }));
-  };
-
-  // Handle collector weight change
-  const handlePakanChange = (collectorId: string, value: string) => {
-    const num = Math.max(0, parseFloat(value) || 0);
-    setPakanInputs((prev) =>
-      prev.map((p) => (p.collectorId === collectorId ? { ...p, weightKg: num } : p))
+  // Load existing ANORGANIK data
+  useEffect(() => {
+    const existing = anorganikDailyRecords.find(
+      (r) => r.date === selectedDate && r.kelurahanId === selectedKelurahan
     );
-  };
+    if (existing) {
+      setSatgasMobilKg(existing.satgasMobilKg || 0);
+      setSatgasFukudaKg(existing.satgasFukudaKg || 0);
+      setAnorganikNotes(existing.catatan || '');
+    } else {
+      setSatgasMobilKg(0);
+      setSatgasFukudaKg(0);
+      setAnorganikNotes('');
+    }
+  }, [selectedDate, selectedKelurahan, anorganikDailyRecords]);
 
-  // Live Auto-Calculated Totals
-  const totalTpa =
-    composition.makananTpa +
-    composition.sisaBuahTpa +
-    composition.sisaSayurTpa +
-    composition.daunTpa;
+  // Load existing RESIDU data
+  useEffect(() => {
+    const existing = residuRecords.find(
+      (r) => r.date === selectedDate && r.kelurahanId === selectedKelurahan
+    );
+    if (existing) {
+      setBeratResiduKg(existing.beratKg || 0);
+      setArmadaType(existing.armadaType || 'Truk Kontainer DLH');
+      setNomorArmada(existing.nomorArmada || 'DD 8001 UP');
+      setJamPengangkutan(existing.jamPengangkutan || '06:30 - 08:00 WITA');
+      setResiduCatatan(existing.catatan || '');
+    } else {
+      setBeratResiduKg(0);
+      setArmadaType('Truk Kontainer DLH');
+      setNomorArmada('DD 8001 UP');
+      setJamPengangkutan('06:30 - 08:00 WITA');
+      setResiduCatatan('');
+    }
+  }, [selectedDate, selectedKelurahan, residuRecords]);
 
-  const totalTps3r =
-    composition.makananTps3r +
-    composition.sisaBuahTps3r +
-    composition.sisaSayurTps3r +
-    composition.daunTps3r;
-
-  const totalPakan = pakanInputs.reduce((sum, p) => sum + (p.weightKg || 0), 0);
-
-  const grandTotal = totalTpa + totalTps3r + totalPakan;
-
-  // Handle Save
-  const handleSubmit = (e: React.FormEvent) => {
+  // Handle Save Organik
+  const handleSubmitOrganik = (e: React.FormEvent) => {
     e.preventDefault();
     saveDailyRecord({
       date: selectedDate,
@@ -168,42 +184,138 @@ export const InputPortalView: React.FC = () => {
     });
   };
 
-  // Handle Add New Collector
+  // Handle Save Anorganik
+  const handleSubmitAnorganik = (e: React.FormEvent) => {
+    e.preventDefault();
+    const totalKg = (satgasMobilKg || 0) + (satgasFukudaKg || 0);
+    saveAnorganikDailyRecord({
+      date: selectedDate,
+      kelurahanId: selectedKelurahan,
+      satgasMobilKg,
+      satgasFukudaKg,
+      totalKg,
+      catatan: anorganikNotes,
+      submittedBy: operatorName,
+    });
+  };
+
+  // Handle Save Residu
+  const handleSubmitResidu = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveResiduRecord({
+      date: selectedDate,
+      kelurahanId: selectedKelurahan,
+      beratKg: beratResiduKg,
+      armadaType,
+      nomorArmada,
+      jamPengangkutan,
+      catatan: residuCatatan,
+      submittedBy: operatorName,
+    });
+  };
+
+  // --- FORM STATE: HOREKA ---
+  const [selectedHorekaId, setSelectedHorekaId] = useState<string>('');
+  const [horekaOrganikKg, setHorekaOrganikKg] = useState<number>(0);
+  const [horekaAnorganikKg, setHorekaAnorganikKg] = useState<number>(0);
+  const [horekaResiduKg, setHorekaResiduKg] = useState<number>(0);
+
+  // Filtered Horeka list by selected kelurahan
+  const kelurahanHorekaList = useMemo(() => {
+    return horekaBusinesses.filter((b: any) => b.kelurahanId === selectedKelurahan);
+  }, [horekaBusinesses, selectedKelurahan]);
+
+  // Selected Horeka Business details
+  const selectedHorekaBusiness = useMemo(() => {
+    return horekaBusinesses.find((b: any) => b.id === selectedHorekaId);
+  }, [horekaBusinesses, selectedHorekaId]);
+
+  // Auto select first business when kelurahan changes
+  useEffect(() => {
+    if (kelurahanHorekaList.length > 0) {
+      const exists = kelurahanHorekaList.find((b: any) => b.id === selectedHorekaId);
+      if (!exists) {
+        setSelectedHorekaId(kelurahanHorekaList[0].id);
+      }
+    } else {
+      setSelectedHorekaId('');
+    }
+  }, [kelurahanHorekaList, selectedHorekaId]);
+
+  // Load existing HOREKA data
+  useEffect(() => {
+    if (!selectedHorekaId) return;
+    const existing = horekaDailyRecords.find(
+      (r) => r.date === selectedDate && r.horekaId === selectedHorekaId
+    );
+    if (existing) {
+      setHorekaOrganikKg(existing.organikKg || 0);
+      setHorekaAnorganikKg(existing.anorganikKg || 0);
+      setHorekaResiduKg(existing.residuKg || 0);
+    } else {
+      setHorekaOrganikKg(0);
+      setHorekaAnorganikKg(0);
+      setHorekaResiduKg(0);
+    }
+  }, [selectedDate, selectedHorekaId, horekaDailyRecords]);
+
+  // Handle Save Horeka
+  const handleSubmitHoreka = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedHorekaId) return;
+    saveHorekaDailyRecord({
+      date: selectedDate,
+      horekaId: selectedHorekaId,
+      kelurahanId: selectedKelurahan,
+      organikKg: Number(horekaOrganikKg || 0),
+      anorganikKg: Number(horekaAnorganikKg || 0),
+      residuKg: Number(horekaResiduKg || 0),
+      operatorName,
+    });
+  };
+
+  // Add new collector modal submit
   const handleAddNewCollector = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCollectorName.trim()) return;
-
     addCollector({
       name: newCollectorName.trim(),
       kelurahanId: selectedKelurahan,
       phone: newCollectorPhone.trim() || undefined,
       active: true,
     });
-
     setNewCollectorName('');
     setNewCollectorPhone('');
     setShowAddCollectorModal(false);
   };
 
-  // Compliance list for the selected date
-  const compliance = getComplianceForDate(selectedDate);
-  const submittedCount = compliance.filter((c) => c.submitted).length;
+  // Computations for Organik
+  const totalTpaOrganik =
+    composition.makananTpa + composition.sisaBuahTpa + composition.sisaSayurTpa + composition.daunTpa;
+  const totalTps3rOrganik =
+    composition.makananTps3r + composition.sisaBuahTps3r + composition.sisaSayurTps3r + composition.daunTps3r;
+  const totalPakanOrganik = pakanInputs.reduce((sum, p) => sum + (p.weightKg || 0), 0);
+  const grandTotalOrganik = totalTpaOrganik + totalTps3rOrganik + totalPakanOrganik;
+
+  // Computations for Anorganik
+  const grandTotalAnorganik = satgasMobilKg + satgasFukudaKg;
 
   const activeMeta = KELURAHAN_LIST.find((k) => k.id === selectedKelurahan);
+  const compliance = getComplianceForDate(selectedDate);
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
+      {/* Header Banner & Sub-Menu Switcher */}
       <ScrollReveal delay={0} distance={20} duration={600}>
-        <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-out">
+        <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs hover:shadow-xl transition-all">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-emerald-700" />
-                <span>Portal Input Harian Kelurahan</span>
+                <span>Portal Input Data Persampahan</span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Formulir pencatatan timbulan sampah organik dan alokasi pakan per kelurahan
+                Pencatatan timbulan harian Organik, Anorganik Daur Ulang, dan Residu TPA per Kelurahan
               </p>
             </div>
 
@@ -238,288 +350,269 @@ export const InputPortalView: React.FC = () => {
             </div>
           </div>
 
-          {isExistingRecord && (
-            <div className="mt-3 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-center gap-2">
-              <Info className="w-4 h-4 text-emerald-700 shrink-0" />
-              <span>
-                <strong>Mode Edit:</strong> Laporan untuk <strong>{selectedKelurahan}</strong> pada tanggal{' '}
-                <strong>{selectedDate}</strong> sudah pernah tersimpan. Menyimpan kembali akan memperbarui data rekapitulasi.
-              </span>
-            </div>
-          )}
+          {/* Sub-Menu Tabs Switcher */}
+          <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setActiveInputSubTab('organik')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeInputSubTab === 'organik'
+                  ? 'bg-emerald-700 text-white shadow-md'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              <Leaf className="w-4 h-4" />
+              <span>Input Data Organik</span>
+            </button>
+
+            <button
+              onClick={() => setActiveInputSubTab('anorganik')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeInputSubTab === 'anorganik'
+                  ? 'bg-teal-700 text-white shadow-md'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              <Recycle className="w-4 h-4" />
+              <span>Input Data Anorganik</span>
+            </button>
+
+            <button
+              onClick={() => setActiveInputSubTab('residu')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeInputSubTab === 'residu'
+                  ? 'bg-rose-700 text-white shadow-md'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Input Data Residu</span>
+            </button>
+
+            <button
+              onClick={() => setActiveInputSubTab('horeka')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeInputSubTab === 'horeka'
+                  ? 'bg-indigo-700 text-white shadow-md'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              <Store className="w-4 h-4" />
+              <span>Input Data Horeka</span>
+            </button>
+          </div>
         </div>
       </ScrollReveal>
 
+      {/* SUB TAB 1: FORM INPUT ORGANIK */}
+      {activeInputSubTab === 'organik' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <form onSubmit={handleSubmitOrganik} className="lg:col-span-2 space-y-6">
+            <ScrollReveal delay={50} distance={20} duration={600}>
+              <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs hover:shadow-xl transition-all">
+                <h3 className="font-bold text-sm text-slate-900 mb-4 pb-2 border-b border-slate-100 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Leaf className="w-4 h-4 text-emerald-700" />
+                    <span>Timbulan Sampah Organik (Kg)</span>
+                  </span>
+                  <span className="text-xs text-slate-500 font-normal">
+                    {activeMeta?.name} — {selectedDate}
+                  </span>
+                </h3>
 
-
-      {/* Main 2-Column Form & Preview Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2-Columns: Input Grid */}
-        <form onSubmit={handleSubmit} className="lg:col-span-2 space-y-6">
-          {/* Section 1: Komposisi Sampah Organik (TPA vs TPS3R Matrix) */}
-          <ScrollReveal delay={150} distance={28} duration={700}>
-            <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-out space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">
-                    1. Komposisi Sampah Organik (Kilogram)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Masukkan berat bersih berdasarkan destinasi pemrosesan
-                  </p>
-                </div>
-                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                  Satuan: Kg
-                </span>
-              </div>
-
-            {/* Matrix Header */}
-            <div className="grid grid-cols-12 gap-3 text-xs font-bold text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
-              <div className="col-span-4">Kategori Bahan Organik</div>
-              <div className="col-span-4 text-sky-800 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-sky-600" />
-                <span>Angkutan TPA (Bosowa)</span>
-              </div>
-              <div className="col-span-4 text-emerald-800 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                <span>Pengolahan TPS3R</span>
-              </div>
-            </div>
-
-            {/* Row 1: Makanan */}
-            <div className="grid grid-cols-12 gap-3 items-center p-2 rounded-lg hover:bg-slate-50/70 transition-colors">
-              <div className="col-span-4">
-                <div className="text-xs font-semibold text-slate-900">Makanan</div>
-                <div className="text-[11px] text-slate-400">Sisa nasi, lauk, roti, olahan</div>
-              </div>
-              <div className="col-span-4">
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={composition.makananTpa || ''}
-                    onChange={(e) => handleCompChange('makananTpa', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-xs text-slate-400 pointer-events-none">Kg</span>
-                </div>
-              </div>
-              <div className="col-span-4">
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={composition.makananTps3r || ''}
-                    onChange={(e) => handleCompChange('makananTps3r', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-xs text-slate-400 pointer-events-none">Kg</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Row 2: Sisa Buah */}
-            <div className="grid grid-cols-12 gap-3 items-center p-2 rounded-lg hover:bg-slate-50/70 transition-colors border-t border-slate-100">
-              <div className="col-span-4">
-                <div className="text-xs font-semibold text-slate-900">Sisa Buah</div>
-                <div className="text-[11px] text-slate-400">Kulit buah, ampas, buah afkir</div>
-              </div>
-              <div className="col-span-4">
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={composition.sisaBuahTpa || ''}
-                    onChange={(e) => handleCompChange('sisaBuahTpa', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-xs text-slate-400 pointer-events-none">Kg</span>
-                </div>
-              </div>
-              <div className="col-span-4">
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={composition.sisaBuahTps3r || ''}
-                    onChange={(e) => handleCompChange('sisaBuahTps3r', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-xs text-slate-400 pointer-events-none">Kg</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Row 3: Sisa Sayur */}
-            <div className="grid grid-cols-12 gap-3 items-center p-2 rounded-lg hover:bg-slate-50/70 transition-colors border-t border-slate-100">
-              <div className="col-span-4">
-                <div className="text-xs font-semibold text-slate-900">Sisa Sayur</div>
-                <div className="text-[11px] text-slate-400">Sisa sayur pasar, dapur, batang</div>
-              </div>
-              <div className="col-span-4">
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={composition.sisaSayurTpa || ''}
-                    onChange={(e) => handleCompChange('sisaSayurTpa', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-xs text-slate-400 pointer-events-none">Kg</span>
-                </div>
-              </div>
-              <div className="col-span-4">
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={composition.sisaSayurTps3r || ''}
-                    onChange={(e) => handleCompChange('sisaSayurTps3r', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-xs text-slate-400 pointer-events-none">Kg</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Row 4: Daun */}
-            <div className="grid grid-cols-12 gap-3 items-center p-2 rounded-lg hover:bg-slate-50/70 transition-colors border-t border-slate-100">
-              <div className="col-span-4">
-                <div className="text-xs font-semibold text-slate-900">Daun</div>
-                <div className="text-[11px] text-slate-400">Sapuan jalan, ranting, taman</div>
-              </div>
-              <div className="col-span-4">
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={composition.daunTpa || ''}
-                    onChange={(e) => handleCompChange('daunTpa', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-xs text-slate-400 pointer-events-none">Kg</span>
-                </div>
-              </div>
-              <div className="col-span-4">
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={composition.daunTps3r || ''}
-                    onChange={(e) => handleCompChange('daunTps3r', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-xs text-slate-400 pointer-events-none">Kg</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Subtotal preview */}
-            <div className="grid grid-cols-12 gap-3 pt-3 border-t border-slate-200 text-xs font-bold bg-slate-50/80 p-2.5 rounded-lg">
-              <div className="col-span-4 text-slate-700">Subtotal Sampah</div>
-              <div className="col-span-4 text-sky-800 font-mono">
-                {totalTpa.toLocaleString('id-ID')} Kg
-              </div>
-              <div className="col-span-4 text-emerald-800 font-mono">
-                {totalTps3r.toLocaleString('id-ID')} Kg
-              </div>
-            </div>
-            </div>
-          </ScrollReveal>
-
-          {/* Section 2: Dynamic Petugas Pakan */}
-          <ScrollReveal delay={220} distance={28} duration={700}>
-            <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-out space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                    <span>2. Distribusi Pakan (Petugas Pengumpul)</span>
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Mitra pengumpul pakan ternak resmi terdaftar di {activeMeta?.name}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAddCollectorModal(true)}
-                  className="flex items-center gap-1 text-xs text-emerald-800 hover:text-emerald-950 font-semibold bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200/60 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>+ Petugas Baru</span>
-                </button>
-              </div>
-
-              {pakanInputs.length === 0 ? (
-                <div className="p-4 bg-slate-50 rounded-lg border border-dashed border-slate-200 text-center text-xs text-slate-500">
-                  <p>Belum ada petugas pakan yang terdaftar untuk {activeMeta?.name}.</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddCollectorModal(true)}
-                    className="mt-2 text-emerald-700 font-semibold underline"
-                  >
-                    Daftarkan Petugas Pakan Sekarang
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {pakanInputs.map((pakan) => (
-                    <div
-                      key={pakan.collectorId}
-                      className="p-3 bg-slate-50/70 hover:bg-white border border-slate-200 hover:border-amber-300 rounded-lg flex items-center justify-between gap-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center text-xs font-bold">
-                          {pakan.collectorName.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-800">
-                            {pakan.collectorName}
-                          </div>
-                          <div className="text-[10px] text-amber-700 font-medium">
-                            Pengumpul Pakan
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="w-32 relative">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Sisa Makanan */}
+                  <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2">
+                    <label className="font-bold text-xs text-slate-900 block">
+                      1. Sisa Makanan / Dapur
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-[11px] text-slate-500 block mb-1">Ke TPA (Bosowa):</span>
                         <input
                           type="number"
                           min="0"
-                          step="any"
-                          value={pakan.weightKg || ''}
-                          onChange={(e) => handlePakanChange(pakan.collectorId, e.target.value)}
-                          placeholder="0"
-                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-medium text-slate-900 focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-right pr-7"
+                          value={composition.makananTpa || ''}
+                          onChange={(e) =>
+                            setComposition({ ...composition, makananTpa: Number(e.target.value) })
+                          }
+                          className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-emerald-500"
                         />
-                        <span className="absolute right-2 top-1.5 text-xs text-slate-400 pointer-events-none">
-                          Kg
-                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-slate-500 block mb-1">Ke TPS3R Karebosi:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={composition.makananTps3r || ''}
+                          onChange={(e) =>
+                            setComposition({ ...composition, makananTps3r: Number(e.target.value) })
+                          }
+                          className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                        />
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                  </div>
 
-              {/* Operator Notes & Identity */}
-              <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                <div className="w-full sm:w-auto flex items-center gap-2">
-                  <span className="text-slate-500">Petugas Input / Operator:</span>
+                  {/* Sisa Buah */}
+                  <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2">
+                    <label className="font-bold text-xs text-slate-900 block">
+                      2. Sisa Buah-Buahan (Pasar)
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-[11px] text-slate-500 block mb-1">Ke TPA (Bosowa):</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={composition.sisaBuahTpa || ''}
+                          onChange={(e) =>
+                            setComposition({ ...composition, sisaBuahTpa: Number(e.target.value) })
+                          }
+                          className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-slate-500 block mb-1">Ke TPS3R Karebosi:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={composition.sisaBuahTps3r || ''}
+                          onChange={(e) =>
+                            setComposition({ ...composition, sisaBuahTps3r: Number(e.target.value) })
+                          }
+                          className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sisa Sayur */}
+                  <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2">
+                    <label className="font-bold text-xs text-slate-900 block">
+                      3. Sisa Sayur-Sayuran
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-[11px] text-slate-500 block mb-1">Ke TPA (Bosowa):</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={composition.sisaSayurTpa || ''}
+                          onChange={(e) =>
+                            setComposition({ ...composition, sisaSayurTpa: Number(e.target.value) })
+                          }
+                          className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-slate-500 block mb-1">Ke TPS3R Karebosi:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={composition.sisaSayurTps3r || ''}
+                          onChange={(e) =>
+                            setComposition({ ...composition, sisaSayurTps3r: Number(e.target.value) })
+                          }
+                          className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sampah Daun */}
+                  <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2">
+                    <label className="font-bold text-xs text-slate-900 block">
+                      4. Sampah Daun / Ranting
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-[11px] text-slate-500 block mb-1">Ke TPA (Bosowa):</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={composition.daunTpa || ''}
+                          onChange={(e) =>
+                            setComposition({ ...composition, daunTpa: Number(e.target.value) })
+                          }
+                          className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-slate-500 block mb-1">Ke TPS3R Karebosi:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={composition.daunTps3r || ''}
+                          onChange={(e) =>
+                            setComposition({ ...composition, daunTps3r: Number(e.target.value) })
+                          }
+                          className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </ScrollReveal>
+
+            {/* Pakan Ternak Input List */}
+            <ScrollReveal delay={100} distance={20} duration={600}>
+              <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs hover:shadow-xl transition-all">
+                <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                  <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-amber-600" />
+                    <span>Distribusi Pakan Ternak (Petugas Pengumpul)</span>
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCollectorModal(true)}
+                    className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Tambah Petugas</span>
+                  </button>
+                </div>
+
+                {pakanInputs.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-2">
+                    Belum ada petugas pakan terdaftar di Kelurahan {selectedKelurahan}.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {pakanInputs.map((item, idx) => (
+                      <div
+                        key={item.collectorId || idx}
+                        className="flex items-center justify-between p-3 bg-amber-50/50 border border-amber-200/70 rounded-xl text-xs"
+                      >
+                        <span className="font-bold text-slate-800">{item.collectorName}</span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.weightKg || ''}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const updated = [...pakanInputs];
+                              updated[idx].weightKg = val;
+                              setPakanInputs(updated);
+                            }}
+                            className="w-20 bg-white border border-slate-300 rounded px-2 py-1 text-right font-mono font-bold text-slate-900 focus:ring-1 focus:ring-amber-500"
+                          />
+                          <span className="text-slate-500 font-semibold">Kg</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </ScrollReveal>
+
+            {/* Operator Name */}
+            <ScrollReveal delay={120} distance={20} duration={600}>
+              <div className="bg-white rounded-xl border border-slate-200/90 p-4 shadow-xs flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-slate-400" />
+                  <span className="font-semibold text-slate-700">Nama Petugas Input:</span>
                   <input
                     type="text"
                     value={operatorName}
@@ -527,247 +620,562 @@ export const InputPortalView: React.FC = () => {
                     className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-800 font-medium text-xs focus:outline-hidden"
                   />
                 </div>
-                <div className="text-slate-500 font-mono text-[11px]">
-                  Kecamatan Ujung Pandang, Makassar
-                </div>
               </div>
-            </div>
-          </ScrollReveal>
-        </form>
+            </ScrollReveal>
+          </form>
 
-        {/* Right 1-Column: Live Summary Preview Card */}
-        <div className="space-y-6">
-          <ScrollReveal delay={150} distance={28} duration={700}>
-            <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs hover:shadow-2xl hover:-translate-y-1.5 transition-all duration-300 ease-out sticky top-20">
-              <h3 className="font-bold text-sm text-slate-900 pb-3 border-b border-slate-100">
-                Ringkasan Live Input
-              </h3>
+          {/* Right Column: Live Summary Organik */}
+          <div>
+            <ScrollReveal delay={150} distance={28} duration={700}>
+              <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs hover:shadow-2xl transition-all sticky top-20">
+                <h3 className="font-bold text-sm text-slate-900 pb-3 border-b border-slate-100">
+                  Ringkasan Live Organik
+                </h3>
 
-              <div className="my-4 space-y-3 text-xs">
-                <div className="flex items-center justify-between py-1 text-slate-600">
-                  <span>Kelurahan:</span>
-                  <span className="font-bold text-slate-900">{activeMeta?.name}</span>
-                </div>
-                <div className="flex items-center justify-between py-1 text-slate-600">
-                  <span>Tanggal Laporan:</span>
-                  <span className="font-mono font-medium text-slate-900">{selectedDate}</span>
-                </div>
+                <div className="my-4 space-y-3 text-xs">
+                  <div className="flex items-center justify-between py-1 text-slate-600">
+                    <span>Kelurahan:</span>
+                    <span className="font-bold text-slate-900">{activeMeta?.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-1 text-slate-600">
+                    <span>Tanggal Laporan:</span>
+                    <span className="font-mono font-medium text-slate-900">{selectedDate}</span>
+                  </div>
 
-                <div className="pt-2 border-t border-slate-100 space-y-2">
-                  <div className="flex items-center justify-between text-slate-700">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full bg-sky-600" />
+                  <div className="pt-2 border-t border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between text-slate-700">
                       <span>Total TPA (Bosowa):</span>
+                      <span className="font-mono font-bold text-sky-800">{totalTpaOrganik.toLocaleString('id-ID')} Kg</span>
                     </div>
-                    <span className="font-mono font-bold text-sky-800">
-                      {totalTpa.toLocaleString('id-ID')} Kg
-                    </span>
-                  </div>
 
-                  <div className="flex items-center justify-between text-slate-700">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                      <span>Total TPS3R:</span>
+                    <div className="flex items-center justify-between text-slate-700">
+                      <span>Total TPS3R Karebosi:</span>
+                      <span className="font-mono font-bold text-emerald-800">{totalTps3rOrganik.toLocaleString('id-ID')} Kg</span>
                     </div>
-                    <span className="font-mono font-bold text-emerald-800">
-                      {totalTps3r.toLocaleString('id-ID')} Kg
-                    </span>
-                  </div>
 
-                  <div className="flex items-center justify-between text-slate-700">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
+                    <div className="flex items-center justify-between text-slate-700">
                       <span>Total Pakan Ternak:</span>
+                      <span className="font-mono font-bold text-amber-800">{totalPakanOrganik.toLocaleString('id-ID')} Kg</span>
                     </div>
-                    <span className="font-mono font-bold text-amber-800">
-                      {totalPakan.toLocaleString('id-ID')} Kg
-                    </span>
                   </div>
-                </div>
 
-                <div className="pt-3 border-t-2 border-slate-200">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-xs font-bold text-slate-900 uppercase">
-                      Grand Total Hari Ini:
-                    </span>
-                    <div className="text-right">
-                      <span className="text-2xl font-extrabold text-emerald-800 font-mono tabular-nums">
-                        {grandTotal.toLocaleString('id-ID')}
+                  <div className="pt-3 border-t-2 border-slate-200">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs font-bold text-slate-900 uppercase">Grand Total Organik:</span>
+                      <span className="text-2xl font-extrabold text-emerald-800 font-mono">
+                        {grandTotalOrganik.toLocaleString('id-ID')} <span className="text-xs">Kg</span>
                       </span>
-                      <span className="text-xs font-semibold text-slate-500 ml-1">Kg</span>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Action Button */}
-              <div className="space-y-2 pt-2">
                 <button
                   type="button"
-                  onClick={handleSubmit}
+                  onClick={handleSubmitOrganik}
                   disabled={isSavingToSheets}
                   className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white font-semibold rounded-lg shadow-xs transition-colors text-xs"
                 >
-                  {isSavingToSheets ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin text-emerald-200" />
-                      <span>Menyimpan ke Web & Spreadsheet...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>Simpan & Kirim Laporan</span>
-                    </>
-                  )}
-                </button>
-
-                {lastPushResult && !lastPushResult.success && (
-                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-950 space-y-2 animate-in fade-in">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-bold block text-amber-900">
-                          Tersimpan di Web, Belum Masuk ke Spreadsheet
-                        </span>
-                        <p className="text-[11px] text-amber-800 leading-relaxed mt-0.5">
-                          {lastPushResult.message}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsSyncModalOpen(true)}
-                      className="w-full py-1.5 px-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                    >
-                      <Code2 className="w-3.5 h-3.5" />
-                      <span>Buka Solusi Perbaikan Script Google Sheets</span>
-                    </button>
-                  </div>
-                )}
-
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('table')}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors text-xs"
-                >
-                  <span>Lihat di Tabel Matriks</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <Save className="w-4 h-4" />
+                  <span>Simpan Laporan Organik</span>
                 </button>
               </div>
-            </div>
-          </ScrollReveal>
-        </div>
-      </div>
-
-      {/* Status Kepatuhan Input Harian Grid */}
-      <ScrollReveal delay={200} distance={32} duration={700}>
-        <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 ease-out">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-bold text-sm text-slate-900">
-                Status Kepatuhan Input Harian (Tanggal: {selectedDate})
-              </h3>
-              <p className="text-xs text-slate-500">
-                Pemantauan input 10 kelurahan. Klik salah satu kelurahan untuk langsung mengisi laporannya.
-              </p>
-            </div>
-            <span className="text-xs font-mono font-semibold bg-slate-100 text-slate-700 px-2.5 py-1 rounded">
-              {submittedCount} / 10 Kelurahan Terinput
-            </span>
+            </ScrollReveal>
           </div>
+        </div>
+      )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {compliance.map((item) => {
-              const isCurrent = item.kelurahanId === selectedKelurahan;
-              return (
-                <button
-                  key={item.kelurahanId}
-                  type="button"
-                  onClick={() => setSelectedKelurahan(item.kelurahanId)}
-                  className={`p-3 rounded-lg border text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-md ${
-                    isCurrent
-                      ? 'ring-2 ring-emerald-600 border-emerald-500 bg-emerald-50/50'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-slate-800 truncate">
-                      {item.name.replace('Kelurahan ', '')}
-                    </span>
-                    {item.submitted ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    )}
+      {/* SUB TAB 2: FORM INPUT ANORGANIK */}
+      {activeInputSubTab === 'anorganik' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <form onSubmit={handleSubmitAnorganik} className="lg:col-span-2 space-y-6">
+            <ScrollReveal delay={50} distance={20} duration={600}>
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:shadow-xl transition-all space-y-5">
+                <h3 className="font-bold text-sm text-slate-900 pb-2 border-b border-slate-100 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Recycle className="w-4.5 h-4.5 text-teal-700" />
+                    <span>Formulir Input Sampah Anorganik Terpilah</span>
+                  </span>
+                  <span className="text-xs text-slate-500 font-normal">
+                    {activeMeta?.name} — {selectedDate}
+                  </span>
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  {/* 1. Input Data Satgas Mobil */}
+                  <div className="p-4 bg-sky-50/70 border border-sky-200 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-sky-950 font-bold">
+                      <Truck className="w-4 h-4 text-sky-700" />
+                      <span>1. Input Data Satgas Mobil</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Volume sampah anorganik terpilah hasil pengangkutan armada Satgas Mobil
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="number"
+                        min="0"
+                        value={satgasMobilKg || ''}
+                        onChange={(e) => setSatgasMobilKg(Number(e.target.value))}
+                        className="w-full bg-white border border-sky-300 rounded-lg px-3 py-2 font-mono font-extrabold text-base text-sky-950 focus:ring-2 focus:ring-sky-500"
+                        placeholder="0"
+                      />
+                      <span className="font-extrabold text-sky-900">Kg</span>
+                    </div>
                   </div>
 
-                  <div className="text-[11px] font-mono tabular-nums text-slate-600">
-                    {item.submitted ? (
-                      <span className="text-emerald-700 font-semibold">
-                        {item.totalKg.toLocaleString('id-ID')} Kg
+                  {/* 2. Input Data Satgas Fukuda */}
+                  <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-amber-950 font-bold">
+                      <Recycle className="w-4 h-4 text-amber-700" />
+                      <span>2. Input Data Satgas Fukuda</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Volume sampah anorganik terpilah hasil pengangkutan armada Satgas Fukuda
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="number"
+                        min="0"
+                        value={satgasFukudaKg || ''}
+                        onChange={(e) => setSatgasFukudaKg(Number(e.target.value))}
+                        className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 font-mono font-extrabold text-base text-amber-950 focus:ring-2 focus:ring-amber-500"
+                        placeholder="0"
+                      />
+                      <span className="font-extrabold text-amber-900">Kg</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-2 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1">
+                      Catatan / Keterangan Penyetoran Anorganik:
+                    </label>
+                    <textarea
+                      value={anorganikNotes}
+                      onChange={(e) => setAnorganikNotes(e.target.value)}
+                      rows={2}
+                      placeholder="Catatan jenis sampah anorganik (plastik, kertas, logam, dll)..."
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-900"
+                    />
+                  </div>
+                </div>
+              </div>
+            </ScrollReveal>
+          </form>
+
+          {/* Right Column: Live Summary Anorganik */}
+          <div>
+            <ScrollReveal delay={100} distance={28} duration={700}>
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:shadow-2xl transition-all sticky top-20">
+                <h3 className="font-bold text-sm text-slate-900 pb-3 border-b border-slate-100 flex items-center justify-between">
+                  <span>Ringkasan Live Anorganik</span>
+                  <span className="text-xs text-teal-700 font-bold">{selectedKelurahan}</span>
+                </h3>
+
+                <div className="my-4 space-y-3 text-xs">
+                  <div className="flex justify-between py-1 text-slate-600">
+                    <span>Satgas Mobil:</span>
+                    <span className="font-mono font-bold text-sky-800">{satgasMobilKg.toLocaleString('id-ID')} Kg</span>
+                  </div>
+                  <div className="flex justify-between py-1 text-slate-600">
+                    <span>Satgas Fukuda:</span>
+                    <span className="font-mono font-bold text-amber-800">{satgasFukudaKg.toLocaleString('id-ID')} Kg</span>
+                  </div>
+
+                  <div className="pt-3 border-t-2 border-slate-200">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs font-bold text-slate-900 uppercase">Total Anorganik:</span>
+                      <span className="text-2xl font-extrabold text-teal-800 font-mono">
+                        {(satgasMobilKg + satgasFukudaKg).toLocaleString('id-ID')} <span className="text-xs">Kg</span>
                       </span>
-                    ) : (
-                      <span className="text-amber-600">Belum Ada</span>
-                    )}
+                    </div>
                   </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSubmitAnorganik}
+                  disabled={isSavingToSheets}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-teal-700 hover:bg-teal-800 disabled:opacity-60 text-white font-semibold rounded-lg shadow-xs transition-colors text-xs cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingToSheets ? 'Menyimpan ke Google Sheets...' : 'Simpan Laporan Anorganik'}</span>
                 </button>
-              );
-            })}
+              </div>
+            </ScrollReveal>
           </div>
         </div>
-      </ScrollReveal>
+      )}
+
+      {/* SUB TAB 3: FORM INPUT RESIDU */}
+      {activeInputSubTab === 'residu' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <form onSubmit={handleSubmitResidu} className="lg:col-span-2 space-y-6">
+            <ScrollReveal delay={50} distance={20} duration={600}>
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:shadow-xl transition-all space-y-4">
+                <h3 className="font-bold text-sm text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
+                  <Trash2 className="w-4.5 h-4.5 text-rose-700" />
+                  <span>Formulir Input Sampah Residu TPA Tamangapa</span>
+                </h3>
+
+                <div className="p-4 bg-rose-50/60 border border-rose-200 rounded-2xl space-y-3">
+                  <div>
+                    <label className="font-bold text-xs text-rose-950 block mb-1">
+                      Berat Sampah Residu Terangkut (Kg):
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={beratResiduKg || ''}
+                        onChange={(e) => setBeratResiduKg(Number(e.target.value))}
+                        className="w-full bg-white border border-rose-300 rounded-xl px-3 py-2 text-lg font-mono font-extrabold text-rose-950 focus:ring-2 focus:ring-rose-500"
+                        placeholder="Contoh: 4072"
+                      />
+                      <span className="font-extrabold text-rose-900 text-sm">Kg</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">Jenis Armada Angkutan:</label>
+                      <select
+                        value={armadaType}
+                        onChange={(e) => setArmadaType(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium text-slate-900"
+                      >
+                        <option value="Truk Kontainer DLH">Truk Kontainer DLH</option>
+                        <option value="Truk Kompaktor">Truk Kompaktor</option>
+                        <option value="Tossa / Viar Tiga Roda">Tossa / Viar Tiga Roda</option>
+                        <option value="Gerobak / Tangkasa">Gerobak / Tangkasa</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">Nomor Polisi / Kode Armada:</label>
+                      <input
+                        type="text"
+                        value={nomorArmada}
+                        onChange={(e) => setNomorArmada(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-mono font-bold text-slate-900"
+                        placeholder="DD 8001 UP"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">Jam Pengangkutan / Masuk TPA:</label>
+                      <input
+                        type="text"
+                        value={jamPengangkutan}
+                        onChange={(e) => setJamPengangkutan(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium text-slate-900"
+                        placeholder="06:30 - 08:00 WITA"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">Petugas Input / Sopir Armada:</label>
+                      <input
+                        type="text"
+                        value={operatorName}
+                        onChange={(e) => setOperatorName(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1 text-xs">Catatan Lapangan / TPA:</label>
+                    <textarea
+                      value={residuCatatan}
+                      onChange={(e) => setResiduCatatan(e.target.value)}
+                      rows={2}
+                      placeholder="Catatan volume kontainer, timbangan TPA, dll..."
+                      className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-900"
+                    />
+                  </div>
+                </div>
+              </div>
+            </ScrollReveal>
+          </form>
+
+          {/* Right Column: Live Summary Residu */}
+          <div>
+            <ScrollReveal delay={100} distance={28} duration={700}>
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:shadow-2xl transition-all sticky top-20">
+                <h3 className="font-bold text-sm text-slate-900 pb-3 border-b border-slate-100 flex items-center justify-between">
+                  <span>Ringkasan Residu</span>
+                  <span className="text-xs text-rose-700 font-bold">{selectedKelurahan}</span>
+                </h3>
+
+                <div className="my-4 space-y-2 text-xs">
+                  <div className="flex justify-between py-1 text-slate-600">
+                    <span>Tanggal:</span>
+                    <span className="font-mono font-bold text-slate-900">{selectedDate}</span>
+                  </div>
+                  <div className="flex justify-between py-1 text-slate-600">
+                    <span>Armada:</span>
+                    <span className="font-semibold text-slate-900">{armadaType}</span>
+                  </div>
+                  <div className="flex justify-between py-1 text-slate-600">
+                    <span>No. Polisi:</span>
+                    <span className="font-mono font-bold text-slate-900">{nomorArmada}</span>
+                  </div>
+
+                  <div className="pt-3 border-t-2 border-slate-200">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs font-bold text-slate-900 uppercase">Berat Residu:</span>
+                      <span className="text-2xl font-extrabold text-rose-800 font-mono">
+                        {beratResiduKg.toLocaleString('id-ID')} <span className="text-xs">Kg</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSubmitResidu}
+                  disabled={isSavingToSheets}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-rose-700 hover:bg-rose-800 disabled:opacity-60 text-white font-semibold rounded-lg shadow-xs transition-colors text-xs cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingToSheets ? 'Menyimpan ke Google Sheets...' : 'Simpan Laporan Residu'}</span>
+                </button>
+              </div>
+            </ScrollReveal>
+          </div>
+        </div>
+      )}
+
+
+
+      {/* SUB TAB 4: FORM INPUT HOREKA */}
+      {activeInputSubTab === 'horeka' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <form onSubmit={handleSubmitHoreka} className="lg:col-span-2 space-y-6">
+            <ScrollReveal delay={50} distance={20} duration={600}>
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:shadow-xl transition-all space-y-5">
+                <h3 className="font-bold text-sm text-slate-900 pb-2 border-b border-slate-100 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Store className="w-4.5 h-4.5 text-indigo-700" />
+                    <span>Formulir Input Data Horeka (Hotel, Restoran, Kafe, Kios)</span>
+                  </span>
+                  <span className="text-xs text-slate-500 font-normal">
+                    {selectedKelurahan} — {selectedDate}
+                  </span>
+                </h3>
+
+                <div className="space-y-4 text-xs">
+                  {/* 1. Nama Usaha */}
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1">
+                      1. Nama Usaha (Sesuai Data Excel Horeka):
+                    </label>
+                    {kelurahanHorekaList.length === 0 ? (
+                      <p className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+                        Tidak ada usaha Horeka terdaftar di Kelurahan {selectedKelurahan}. Silakan pilih kelurahan lain.
+                      </p>
+                    ) : (
+                      <select
+                        value={selectedHorekaId}
+                        onChange={(e) => setSelectedHorekaId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 text-xs"
+                      >
+                        {kelurahanHorekaList.map((b: any) => (
+                          <option key={b.id} value={b.id}>
+                            {b.namaUsaha} ({b.alamatUsaha})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* 2. Alamat */}
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1">
+                      2. Alamat Usaha (Sesuai Data Excel Horeka):
+                    </label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={selectedHorekaBusiness?.alamatUsaha || 'JL. KAJAOLALIDO'}
+                      className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 font-semibold text-slate-700 text-xs cursor-not-allowed"
+                    />
+                  </div>
+
+                  {/* 3. Sampah Organik */}
+                  <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1.5">
+                    <label className="font-bold text-emerald-950 block text-xs">
+                      3. Sampah Organik (Kg):
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Timbulan sampah organik basah / sisa makanan dapur usaha
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={horekaOrganikKg || ''}
+                        onChange={(e) => setHorekaOrganikKg(Number(e.target.value))}
+                        className="w-full bg-white border border-emerald-300 rounded-lg px-3 py-2 font-mono font-extrabold text-base text-emerald-950 focus:ring-2 focus:ring-emerald-500"
+                        placeholder="0"
+                      />
+                      <span className="font-extrabold text-emerald-900">Kg</span>
+                    </div>
+                  </div>
+
+                  {/* 4. Sampah Anorganik */}
+                  <div className="p-3.5 bg-teal-50/70 border border-teal-200 rounded-xl space-y-1.5">
+                    <label className="font-bold text-teal-950 block text-xs">
+                      4. Sampah Anorganik (Kg):
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Timbulan sampah daur ulang (kardus, botol, plastik, kaleng)
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={horekaAnorganikKg || ''}
+                        onChange={(e) => setHorekaAnorganikKg(Number(e.target.value))}
+                        className="w-full bg-white border border-teal-300 rounded-lg px-3 py-2 font-mono font-extrabold text-base text-teal-950 focus:ring-2 focus:ring-teal-500"
+                        placeholder="0"
+                      />
+                      <span className="font-extrabold text-teal-900">Kg</span>
+                    </div>
+                  </div>
+
+                  {/* 5. Sampah Residu */}
+                  <div className="p-3.5 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1.5">
+                    <label className="font-bold text-rose-950 block text-xs">
+                      5. Sampah Residu (Kg):
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Sampah residu tercampur diangkut ke TPA
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={horekaResiduKg || ''}
+                        onChange={(e) => setHorekaResiduKg(Number(e.target.value))}
+                        className="w-full bg-white border border-rose-300 rounded-lg px-3 py-2 font-mono font-extrabold text-base text-rose-950 focus:ring-2 focus:ring-rose-500"
+                        placeholder="0"
+                      />
+                      <span className="font-extrabold text-rose-900">Kg</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </ScrollReveal>
+          </form>
+
+          {/* Right Column: Live Summary Horeka */}
+          <div>
+            <ScrollReveal delay={100} distance={28} duration={700}>
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:shadow-2xl transition-all sticky top-20">
+                <h3 className="font-bold text-sm text-slate-900 pb-3 border-b border-slate-100 flex items-center justify-between">
+                  <span>Ringkasan Live Horeka</span>
+                  <span className="text-xs text-indigo-700 font-bold">{selectedKelurahan}</span>
+                </h3>
+
+                <div className="my-4 space-y-2.5 text-xs">
+                  <div className="flex justify-between py-1 text-slate-600">
+                    <span>Nama Usaha:</span>
+                    <span className="font-bold text-slate-900 text-right truncate max-w-[150px]">
+                      {selectedHorekaBusiness?.namaUsaha || '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 text-slate-600">
+                    <span>Tanggal:</span>
+                    <span className="font-mono font-bold text-slate-900">{selectedDate}</span>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                    <div className="flex justify-between text-slate-700">
+                      <span>3. Sampah Organik:</span>
+                      <span className="font-mono font-bold text-emerald-800">{horekaOrganikKg.toLocaleString('id-ID')} Kg</span>
+                    </div>
+                    <div className="flex justify-between text-slate-700">
+                      <span>4. Sampah Anorganik:</span>
+                      <span className="font-mono font-bold text-teal-800">{horekaAnorganikKg.toLocaleString('id-ID')} Kg</span>
+                    </div>
+                    <div className="flex justify-between text-slate-700">
+                      <span>5. Sampah Residu:</span>
+                      <span className="font-mono font-bold text-rose-800">{horekaResiduKg.toLocaleString('id-ID')} Kg</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t-2 border-slate-200">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs font-bold text-slate-900 uppercase">Total Horeka:</span>
+                      <span className="text-2xl font-extrabold text-indigo-800 font-mono">
+                        {(horekaOrganikKg + horekaAnorganikKg + horekaResiduKg).toLocaleString('id-ID')} <span className="text-xs">Kg</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSubmitHoreka}
+                  disabled={isSavingToSheets}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-700 hover:bg-indigo-800 disabled:opacity-60 text-white font-semibold rounded-lg shadow-xs transition-colors text-xs cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingToSheets ? 'Menyimpan ke Google Sheets...' : 'Simpan Laporan Horeka'}</span>
+                </button>
+              </div>
+            </ScrollReveal>
+          </div>
+        </div>
+      )}
 
       {/* Add Collector Modal */}
       {showAddCollectorModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-md w-full p-6">
-            <h3 className="font-bold text-base text-slate-900 mb-1">
-              Tambah Petugas Pengumpul Pakan
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="font-bold text-base text-slate-900">
+              Tambah Petugas Pengumpul Pakan ({selectedKelurahan})
             </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Daftarkan mitra pengumpul pakan ternak baru untuk {activeMeta?.name}
-            </p>
-
-            <form onSubmit={handleAddNewCollector} className="space-y-4">
+            <form onSubmit={handleAddNewCollector} className="space-y-3 text-xs">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nama Petugas Pakan:
-                </label>
+                <label className="font-bold text-slate-700 block mb-1">Nama Petugas:</label>
                 <input
                   type="text"
                   required
                   value={newCollectorName}
                   onChange={(e) => setNewCollectorName(e.target.value)}
-                  placeholder="Contoh: Daeng Ramli"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-hidden focus:border-emerald-500"
+                  placeholder="Contoh: Pak Daeng Sikki"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nomor HP / WhatsApp (Opsional):
-                </label>
+                <label className="font-bold text-slate-700 block mb-1">No. WhatsApp / HP (Opsional):</label>
                 <input
-                  type="tel"
+                  type="text"
                   value={newCollectorPhone}
                   onChange={(e) => setNewCollectorPhone(e.target.value)}
-                  placeholder="0812-xxxx-xxxx"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-hidden focus:border-emerald-500"
+                  placeholder="0812..."
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium"
                 />
               </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddCollectorModal(false)}
-                  className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg"
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-semibold"
                 >
                   Simpan Petugas
                 </button>
@@ -776,12 +1184,6 @@ export const InputPortalView: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Google Sheets Sync & Apps Script Modal */}
-      <GoogleSheetsSyncModal
-        isOpen={isSyncModalOpen}
-        onClose={() => setIsSyncModalOpen(false)}
-      />
     </div>
   );
 };

@@ -40,7 +40,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-emerald-600 selection:text-white">
+    <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-emerald-600 selection:text-white w-full overflow-x-hidden">
       {/* Top Navbar */}
       <Navbar onOpenSpreadsheetGuide={() => setIsSpreadsheetGuideOpen(true)} />
 

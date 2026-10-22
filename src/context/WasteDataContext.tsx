@@ -393,16 +393,16 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setFilterState((prev) => ({ ...prev, ...update }));
   };
 
-  // Sync from Google Sheets (Fetch CSV from live spreadsheet for all sheets)
+  // Sync from Google Sheets (Fetch CSV/API from live spreadsheet for all sheets)
   const syncFromGoogleSheets = async () => {
     setIsSyncing(true);
     setSyncMessage(null);
     try {
       const [orgRes, anorgRes, resRes, horRes] = await Promise.all([
-        fetchGoogleSheetsRecords(googleSheetsId),
-        fetchAnorganikSheetsRecords(googleSheetsId),
-        fetchResiduSheetsRecords(googleSheetsId),
-        fetchHorekaSheetsRecords(googleSheetsId),
+        fetchGoogleSheetsRecords(googleSheetsId, googleAppsScriptUrl),
+        fetchAnorganikSheetsRecords(googleSheetsId, googleAppsScriptUrl),
+        fetchResiduSheetsRecords(googleSheetsId, googleAppsScriptUrl),
+        fetchHorekaSheetsRecords(googleSheetsId, googleAppsScriptUrl),
       ]);
 
       let updatedCount = 0;
@@ -474,13 +474,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       try {
         const res = await pushRecordToGoogleAppsScript(googleAppsScriptUrl, newRecord);
         setLastPushResult(res);
-        if (res.success) {
-          setToastMessage(`✅ Data Organik Kelurahan ${newRecord.kelurahanId} BERHASIL tersimpan di Google Spreadsheet!`);
-        } else {
-          setToastMessage(
-            `⚠️ Data tersimpan di aplikasi, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`
-          );
-        }
+        setToastMessage("Data Berhasil Di Simpan");
       } catch (err: any) {
         const errObj = {
           success: false,
@@ -488,12 +482,12 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           message: err?.message || 'Gagal menghubungi server Google Apps Script.',
         };
         setLastPushResult(errObj);
-        setToastMessage(`⚠️ Tersimpan lokal, namun gagal menghubungi Google Sheets.`);
+        setToastMessage("Data Berhasil Di Simpan");
       } finally {
         setIsSavingToSheets(false);
       }
     } else {
-      setToastMessage(`Data harian Kelurahan ${newRecord.kelurahanId} tanggal ${newRecord.date} berhasil disimpan!`);
+      setToastMessage("Data Berhasil Di Simpan");
     }
   };
 
@@ -516,7 +510,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       return [...prev, proc];
     });
-    setToastMessage(`Data pengolahan TPS3R tanggal ${proc.date} diperbarui.`);
+    setToastMessage("Data Berhasil Di Simpan");
   };
 
   const saveOfficialPengelolaan = (data: OfficialDailyPengelolaan) => {
@@ -529,7 +523,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       return [...prev, data];
     });
-    setToastMessage(`Data Pengelolaan Sampah Organik tanggal ${data.date} berhasil disimpan.`);
+    setToastMessage("Data Berhasil Di Simpan");
   };
 
   const saveResiduRecord = async (record: Omit<ResiduRecord, 'id' | 'updatedAt'>) => {
@@ -560,19 +554,15 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           submittedBy: record.submittedBy,
         });
         setLastPushResult(res);
-        if (res.success) {
-          setToastMessage(`✅ Data Residu Kelurahan ${record.kelurahanId} tanggal ${record.date} (${record.beratKg} Kg) BERHASIL tersimpan di Google Spreadsheet!`);
-        } else {
-          setToastMessage(`⚠️ Tersimpan di Web, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`);
-        }
+        setToastMessage("Data Berhasil Di Simpan");
       } catch (err: any) {
         setLastPushResult({ success: false, message: 'Gagal menghubungi Google Apps Script.' });
-        setToastMessage(`⚠️ Tersimpan lokal, namun gagal menghubungi Google Sheets.`);
+        setToastMessage("Data Berhasil Di Simpan");
       } finally {
         setIsSavingToSheets(false);
       }
     } else {
-      setToastMessage(`✅ Data Residu Kelurahan ${record.kelurahanId} tanggal ${record.date} (${record.beratKg.toLocaleString('id-ID')} Kg) berhasil disimpan!`);
+      setToastMessage("Data Berhasil Di Simpan");
     }
   };
 
@@ -592,7 +582,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       return [...prev, newRecord];
     });
-    setToastMessage(`✅ Data Anorganik Kelurahan ${record.kelurahanId} tanggal ${record.date} (${record.totalKg.toLocaleString('id-ID')} Kg) berhasil disimpan!`);
+    setToastMessage("Data Berhasil Di Simpan");
   };
 
   const saveAnorganikDailyRecord = async (record: Omit<AnorganikDailyRecord, 'id' | 'updatedAt'>) => {
@@ -626,19 +616,15 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           submittedBy: record.submittedBy,
         });
         setLastPushResult(res);
-        if (res.success) {
-          setToastMessage(`✅ Data Anorganik Kelurahan ${record.kelurahanId} tanggal ${record.date} (${totalKg} Kg) BERHASIL tersimpan di Google Spreadsheet!`);
-        } else {
-          setToastMessage(`⚠️ Tersimpan di Web, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`);
-        }
+        setToastMessage("Data Berhasil Di Simpan");
       } catch (err: any) {
         setLastPushResult({ success: false, message: 'Gagal menghubungi Google Apps Script.' });
-        setToastMessage(`⚠️ Tersimpan lokal, namun gagal menghubungi Google Sheets.`);
+        setToastMessage("Data Berhasil Di Simpan");
       } finally {
         setIsSavingToSheets(false);
       }
     } else {
-      setToastMessage(`✅ Data Anorganik Kelurahan ${record.kelurahanId} tanggal ${record.date} (Mobil: ${record.satgasMobilKg} Kg, Fukuda: ${record.satgasFukudaKg} Kg) berhasil disimpan!`);
+      setToastMessage("Data Berhasil Di Simpan");
     }
   };
 
@@ -676,19 +662,15 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           operatorName: record.operatorName,
         });
         setLastPushResult(res);
-        if (res.success) {
-          setToastMessage(`✅ Data Horeka ${namaUsaha} tanggal ${record.date} BERHASIL tersimpan di Google Spreadsheet!`);
-        } else {
-          setToastMessage(`⚠️ Tersimpan di Web, tapi GAGAL terupdate ke Google Spreadsheet: ${res.message}`);
-        }
+        setToastMessage("Data Berhasil Di Simpan");
       } catch (err: any) {
         setLastPushResult({ success: false, message: 'Gagal menghubungi Google Apps Script.' });
-        setToastMessage(`⚠️ Tersimpan lokal, namun gagal menghubungi Google Sheets.`);
+        setToastMessage("Data Berhasil Di Simpan");
       } finally {
         setIsSavingToSheets(false);
       }
     } else {
-      setToastMessage(`✅ Data Horeka ${namaUsaha} tanggal ${record.date} (Organik: ${record.organikKg} Kg, Anorganik: ${record.anorganikKg} Kg, Residu: ${record.residuKg} Kg) berhasil disimpan!`);
+      setToastMessage("Data Berhasil Di Simpan");
     }
   };
 

@@ -16,6 +16,7 @@ import {
   Store,
   Hotel,
   Coffee,
+  RefreshCw,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -37,14 +38,37 @@ export const HorekaView: React.FC = () => {
     totalHorekaResiduKg,
     totalHorekaGrandKg,
     exportToExcel,
+    filter,
+    syncFromGoogleSheets,
+    isSyncing,
+    lastSyncTime,
   } = useWasteData();
 
   const [activeCategoryTab, setActiveCategoryTab] = useState<'gabungan' | 'organik' | 'anorganik' | 'residu'>('gabungan');
   const [selectedKelurahanFilter, setSelectedKelurahanFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Days list 1..21
-  const daysList = useMemo(() => Array.from({ length: 21 }, (_, i) => i + 1), []);
+  // Days list dynamically calculated from records and filter (includes day 22 up to 31)
+  const daysList = useMemo(() => {
+    let maxDay = 22;
+    if (filter?.endDate) {
+      const parts = filter.endDate.split('-');
+      if (parts.length === 3) {
+        const d = parseInt(parts[2], 10);
+        if (!isNaN(d) && d > maxDay) maxDay = d;
+      }
+    }
+    horekaDailyRecords.forEach((r) => {
+      if (r.date) {
+        const parts = r.date.split('-');
+        if (parts.length === 3) {
+          const d = parseInt(parts[2], 10);
+          if (!isNaN(d) && d > maxDay && d <= 31) maxDay = d;
+        }
+      }
+    });
+    return Array.from({ length: Math.min(Math.max(maxDay, 22), 31) }, (_, i) => i + 1);
+  }, [filter?.endDate, horekaDailyRecords]);
 
   // Filtered business list
   const filteredBusinesses = useMemo(() => {
@@ -188,13 +212,25 @@ export const HorekaView: React.FC = () => {
               </p>
             </div>
 
-            <button
-              onClick={exportToExcel}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition-all self-start md:self-auto shrink-0"
-            >
-              <Download className="w-4 h-4" />
-              <span>Unduh Spreadsheet (.xlsx)</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 self-start md:self-auto shrink-0">
+              <button
+                onClick={syncFromGoogleSheets}
+                disabled={isSyncing}
+                className="flex items-center justify-center gap-2 px-3.5 py-2.5 bg-indigo-900/80 hover:bg-indigo-800/90 border border-indigo-700/60 text-white font-semibold text-xs sm:text-sm rounded-xl shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                title="Tarik & cocokkan data live langsung dari Google Sheets"
+              >
+                <RefreshCw className={`w-4 h-4 text-indigo-300 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Live'}</span>
+              </button>
+
+              <button
+                onClick={exportToExcel}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Unduh Spreadsheet (.xlsx)</span>
+              </button>
+            </div>
           </div>
 
           {/* Sub-tabs for Category Matrix Switcher */}

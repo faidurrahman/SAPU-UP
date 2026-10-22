@@ -454,11 +454,106 @@ function parseCsvLine(line: string): string[] {
 }
 
 /**
+ * Normalize date strings into YYYY-MM-DD
+ */
+export function normalizeDateString(rawDate: string): string {
+  if (!rawDate) return '';
+  const cleaned = rawDate.replace(/['"]/g, '').trim();
+  // Check if YYYY-MM-DD
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(cleaned)) {
+    const parts = cleaned.split('-');
+    return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+  }
+  // Check if DD/MM/YYYY or D/M/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(cleaned)) {
+    const parts = cleaned.split('/');
+    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+  }
+  // Check if DD-MM-YYYY or D-M-YYYY
+  if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(cleaned)) {
+    const parts = cleaned.split('-');
+    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+  }
+  return cleaned;
+}
+
+/**
  * Fetch and parse data from Google Sheets INPUT_HARIAN
  */
 export async function fetchGoogleSheetsRecords(
-  spreadsheetId = DEFAULT_SPREADSHEET_ID
+  spreadsheetId = DEFAULT_SPREADSHEET_ID,
+  appsScriptUrl = DEFAULT_APPS_SCRIPT_URL
 ): Promise<{ success: boolean; records: DailyRecord[]; totalRows: number; error?: string }> {
+  // Try Apps Script API first (bypasses Google Account login redirects in external Chrome)
+  if (appsScriptUrl) {
+    try {
+      const apiUrl = `${appsScriptUrl}?action=getAll&sheet=INPUT_HARIAN`;
+      const res = await fetch(apiUrl, { mode: 'cors' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.status === 'success' && Array.isArray(json.records) && json.records.length > 0) {
+          const records: DailyRecord[] = [];
+          const validKelurahanIds: KelurahanId[] = [
+            'BARU', 'BULOGADING', 'LAE-LAE', 'LAJANGIRU', 'LOSARI',
+            'MALOKU', 'MANGKURA', 'PISANG SELATAN', 'PISANG UTARA', 'SAWERIGADING',
+          ];
+
+          for (const item of json.records) {
+            const rawDate = item['Tanggal'] || item['tanggal'] || item['Date'] || '';
+            const date = normalizeDateString(rawDate);
+            const rawKel = String(item['Nama_Kelurahan'] || item['Kelurahan'] || item['kelurahan'] || '').trim().toUpperCase();
+            if (!date || !rawKel) continue;
+
+            const matchedKel = validKelurahanIds.find((id) => {
+              const meta = KELURAHAN_LIST.find((k) => k.id === id);
+              return rawKel.includes(id) || (meta && rawKel.includes(meta.name.toUpperCase())) || rawKel === id;
+            });
+            if (!matchedKel) continue;
+
+            const composition: WasteComposition = {
+              makananTpa: Number(item['Makanan_TPA']) || 0,
+              makananTps3r: Number(item['Makanan_TPS3R']) || 0,
+              sisaBuahTpa: Number(item['Buah_TPA']) || 0,
+              sisaBuahTps3r: Number(item['Buah_TPS3R']) || 0,
+              sisaSayurTpa: Number(item['Sayur_TPA']) || 0,
+              sisaSayurTps3r: Number(item['Sayur_TPS3R']) || 0,
+              daunTpa: Number(item['Daun_TPA']) || 0,
+              daunTps3r: Number(item['Daun_TPS3R']) || 0,
+            };
+
+            const rawCollector = String(item['Petugas_Pakan'] || '-').trim();
+            const pakanWeight = Number(item['Berat_Pakan_Kg']) || 0;
+            const pakanInputs: PakanCollectorInput[] = [];
+            if (pakanWeight > 0) {
+              pakanInputs.push({
+                collectorId: `col-${matchedKel.toLowerCase()}`,
+                collectorName: rawCollector !== '-' ? rawCollector : 'Petugas Pakan',
+                weightKg: pakanWeight,
+              });
+            }
+
+            records.push({
+              id: `${date}_${matchedKel}`,
+              date,
+              kelurahanId: matchedKel,
+              composition,
+              pakanInputs,
+              updatedAt: new Date().toISOString(),
+              submittedBy: String(item['Petugas_Input'] || `Petugas ${matchedKel}`).trim(),
+            });
+          }
+
+          if (records.length > 0) {
+            return { success: true, records, totalRows: records.length };
+          }
+        }
+      }
+    } catch (e) {
+      // Continue to fallback CSV fetch
+    }
+  }
+
+  // Fallback to Google Sheets CSV export
   try {
     const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=INPUT_HARIAN`;
     const response = await fetch(url);
@@ -471,17 +566,6 @@ export async function fetchGoogleSheetsRecords(
 
     if (lines.length < 2) {
       throw new Error('Spreadsheet kosong atau tidak memiliki data.');
-    }
-
-    // Header validation
-    const header = parseCsvLine(lines[0]);
-    const dateIdx = header.findIndex((h) => h.toLowerCase().includes('tanggal'));
-    const kelIdx = header.findIndex(
-      (h) => h.toLowerCase().includes('nama_kelurahan') || h.toLowerCase().includes('kelurahan')
-    );
-
-    if (dateIdx === -1 || kelIdx === -1) {
-      throw new Error('Format kolom sheet INPUT_HARIAN tidak sesuai.');
     }
 
     const records: DailyRecord[] = [];
@@ -502,7 +586,8 @@ export async function fetchGoogleSheetsRecords(
       const cols = parseCsvLine(lines[i]);
       if (cols.length < 14) continue;
 
-      const date = cols[1]?.replace(/['"]/g, '').trim();
+      const rawDate = cols[1]?.replace(/['"]/g, '').trim();
+      const date = normalizeDateString(rawDate);
       const rawKel = cols[3]?.replace(/['"]/g, '').trim().toUpperCase();
 
       if (!date || !rawKel) continue;
@@ -581,8 +666,54 @@ export async function fetchGoogleSheetsRecords(
  * Fetch Anorganik records from Google Sheets REKAP_ANORGANIK
  */
 export async function fetchAnorganikSheetsRecords(
-  spreadsheetId = DEFAULT_SPREADSHEET_ID
+  spreadsheetId = DEFAULT_SPREADSHEET_ID,
+  appsScriptUrl = DEFAULT_APPS_SCRIPT_URL
 ): Promise<{ success: boolean; records: AnorganikDailyRecord[]; error?: string }> {
+  // Try Apps Script API first
+  if (appsScriptUrl) {
+    try {
+      const apiUrl = `${appsScriptUrl}?action=getAll&sheet=REKAP_ANORGANIK`;
+      const res = await fetch(apiUrl, { mode: 'cors' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.status === 'success' && Array.isArray(json.records) && json.records.length > 0) {
+          const records: AnorganikDailyRecord[] = [];
+          const validKelurahanIds: KelurahanId[] = [
+            'BARU', 'BULOGADING', 'LAE-LAE', 'LAJANGIRU', 'LOSARI',
+            'MALOKU', 'MANGKURA', 'PISANG SELATAN', 'PISANG UTARA', 'SAWERIGADING',
+          ];
+
+          for (const item of json.records) {
+            const rawDate = item['Tanggal'] || item['tanggal'] || '';
+            const date = normalizeDateString(rawDate);
+            const rawKel = String(item['Kelurahan'] || item['kelurahan'] || '').trim().toUpperCase();
+            if (!date || !rawKel) continue;
+
+            const matchedKel = validKelurahanIds.find((id) => rawKel.includes(id) || rawKel === id);
+            if (!matchedKel) continue;
+
+            const satgasMobilKg = Number(item['Satgas_Mobil_Kg'] || item['Mobil_Kg']) || 0;
+            const satgasFukudaKg = Number(item['Satgas_Fukuda_Kg'] || item['Fukuda_Kg']) || 0;
+            const totalKg = Number(item['Total_Kg']) || (satgasMobilKg + satgasFukudaKg);
+
+            records.push({
+              id: `${date}_${matchedKel}`,
+              date,
+              kelurahanId: matchedKel,
+              satgasMobilKg,
+              satgasFukudaKg,
+              totalKg,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+
+          if (records.length > 0) return { success: true, records };
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Fallback to Google Sheets CSV export
   try {
     const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=REKAP_ANORGANIK`;
     const response = await fetch(url);
@@ -608,7 +739,8 @@ export async function fetchAnorganikSheetsRecords(
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
       if (cols.length < 3) continue;
-      const date = cols[0]?.replace(/['"]/g, '').trim();
+      const rawDate = cols[0]?.replace(/['"]/g, '').trim();
+      const date = normalizeDateString(rawDate);
       const rawKel = cols[1]?.replace(/['"]/g, '').trim().toUpperCase();
       if (!date || !rawKel) continue;
 
@@ -639,8 +771,52 @@ export async function fetchAnorganikSheetsRecords(
  * Fetch Residu records from Google Sheets REKAP_RESIDU
  */
 export async function fetchResiduSheetsRecords(
-  spreadsheetId = DEFAULT_SPREADSHEET_ID
+  spreadsheetId = DEFAULT_SPREADSHEET_ID,
+  appsScriptUrl = DEFAULT_APPS_SCRIPT_URL
 ): Promise<{ success: boolean; records: ResiduRecord[]; error?: string }> {
+  // Try Apps Script API first
+  if (appsScriptUrl) {
+    try {
+      const apiUrl = `${appsScriptUrl}?action=getAll&sheet=REKAP_RESIDU`;
+      const res = await fetch(apiUrl, { mode: 'cors' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.status === 'success' && Array.isArray(json.records) && json.records.length > 0) {
+          const records: ResiduRecord[] = [];
+          const validKelurahanIds: KelurahanId[] = [
+            'BARU', 'BULOGADING', 'LAE-LAE', 'LAJANGIRU', 'LOSARI',
+            'MALOKU', 'MANGKURA', 'PISANG SELATAN', 'PISANG UTARA', 'SAWERIGADING',
+          ];
+
+          for (const item of json.records) {
+            const rawDate = item['Tanggal'] || item['tanggal'] || '';
+            const date = normalizeDateString(rawDate);
+            const rawKel = String(item['Kelurahan'] || item['kelurahan'] || '').trim().toUpperCase();
+            if (!date || !rawKel) continue;
+
+            const matchedKel = validKelurahanIds.find((id) => rawKel.includes(id) || rawKel === id);
+            if (!matchedKel) continue;
+
+            const beratKg = Number(item['Berat_Residu_Kg'] || item['Berat_Kg']) || 0;
+            const catatan = String(item['Lokasi_TPA'] || item['Catatan'] || '').trim();
+
+            records.push({
+              id: `${date}_${matchedKel}`,
+              date,
+              kelurahanId: matchedKel,
+              beratKg,
+              catatan,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+
+          if (records.length > 0) return { success: true, records };
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Fallback to Google Sheets CSV export
   try {
     const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=REKAP_RESIDU`;
     const response = await fetch(url);
@@ -666,7 +842,8 @@ export async function fetchResiduSheetsRecords(
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
       if (cols.length < 3) continue;
-      const date = cols[0]?.replace(/['"]/g, '').trim();
+      const rawDate = cols[0]?.replace(/['"]/g, '').trim();
+      const date = normalizeDateString(rawDate);
       const rawKel = cols[1]?.replace(/['"]/g, '').trim().toUpperCase();
       if (!date || !rawKel) continue;
 
@@ -693,10 +870,79 @@ export async function fetchResiduSheetsRecords(
 
 /**
  * Fetch Horeka records from Google Sheets DATA_HOREKA_147
+ * Supports both Google Apps Script JSON API and Google Sheets CSV export
  */
 export async function fetchHorekaSheetsRecords(
-  spreadsheetId = DEFAULT_SPREADSHEET_ID
+  spreadsheetId = DEFAULT_SPREADSHEET_ID,
+  appsScriptUrl = DEFAULT_APPS_SCRIPT_URL
 ): Promise<{ success: boolean; records: HorekaDailyRecord[]; error?: string }> {
+  const validKelurahanIds: KelurahanId[] = [
+    'BARU',
+    'BULOGADING',
+    'LAE-LAE',
+    'LAJANGIRU',
+    'LOSARI',
+    'MALOKU',
+    'MANGKURA',
+    'PISANG SELATAN',
+    'PISANG UTARA',
+    'SAWERIGADING',
+  ];
+
+  // Strategy 1: Fetch via Google Apps Script Web App (bypasses Google Account cookie/CORS blocks in external Google Chrome)
+  if (appsScriptUrl) {
+    try {
+      const apiUrl = `${appsScriptUrl}?action=getAll&sheet=DATA_HOREKA_147`;
+      const res = await fetch(apiUrl, { mode: 'cors' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.status === 'success' && Array.isArray(json.records) && json.records.length > 0) {
+          const records: HorekaDailyRecord[] = [];
+
+          for (const item of json.records) {
+            const rawDate = item['Tanggal'] || item['tanggal'] || item['Date'] || '';
+            const date = normalizeDateString(rawDate);
+            const namaUsaha = String(item['Nama_Usaha'] || item['nama_usaha'] || item['Nama Usaha'] || item['Nama'] || '').trim();
+            const kelurahanStr = String(item['Kelurahan'] || item['kelurahan'] || '').trim().toUpperCase();
+            if (!date || !namaUsaha) continue;
+
+            const organikKg = Number(item['Organik_Kg'] || item['organik_kg'] || item['Organik'] || 0) || 0;
+            const anorganikKg = Number(item['Anorganik_Kg'] || item['anorganik_kg'] || item['Anorganik'] || 0) || 0;
+            const residuKg = Number(item['Residu_Kg'] || item['residu_kg'] || item['Residu'] || 0) || 0;
+
+            const matchedKel = validKelurahanIds.find((id) => kelurahanStr.includes(id) || kelurahanStr === id) || 'LOSARI';
+
+            // Clean string matching for business
+            const cleanTarget = namaUsaha.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const business = HOREKA_BUSINESSES.find((b) => {
+              const cleanB = b.namaUsaha.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return cleanB === cleanTarget || cleanTarget.includes(cleanB) || cleanB.includes(cleanTarget);
+            });
+
+            const horekaId = business ? business.id : `hor-${namaUsaha.toLowerCase().replace(/\s+/g, '-')}`;
+
+            records.push({
+              date,
+              horekaId,
+              kelurahanId: matchedKel,
+              organikKg,
+              anorganikKg,
+              residuKg,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+
+          if (records.length > 0) {
+            return { success: true, records };
+          }
+        }
+      }
+    } catch (e) {
+      // Continue to fallback CSV
+    }
+  }
+
+  // Strategy 2: Fallback to Google Sheets CSV export
   try {
     const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=DATA_HOREKA_147`;
     const response = await fetch(url);
@@ -706,23 +952,12 @@ export async function fetchHorekaSheetsRecords(
     if (lines.length < 2) return { success: true, records: [] };
 
     const records: HorekaDailyRecord[] = [];
-    const validKelurahanIds: KelurahanId[] = [
-      'BARU',
-      'BULOGADING',
-      'LAE-LAE',
-      'LAJANGIRU',
-      'LOSARI',
-      'MALOKU',
-      'MANGKURA',
-      'PISANG SELATAN',
-      'PISANG UTARA',
-      'SAWERIGADING',
-    ];
 
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
       if (cols.length < 8) continue;
-      const date = cols[1]?.replace(/['"]/g, '').trim();
+      const rawDate = cols[1]?.replace(/['"]/g, '').trim();
+      const date = normalizeDateString(rawDate);
       const namaUsaha = cols[2]?.replace(/['"]/g, '').trim();
       const kelurahanStr = cols[3]?.replace(/['"]/g, '').trim().toUpperCase();
       if (!date || !namaUsaha) continue;
@@ -733,9 +968,11 @@ export async function fetchHorekaSheetsRecords(
 
       const matchedKel = validKelurahanIds.find((id) => kelurahanStr.includes(id) || kelurahanStr === id) || 'LOSARI';
 
-      const business = HOREKA_BUSINESSES.find(
-        (b) => b.namaUsaha.toUpperCase() === namaUsaha.toUpperCase()
-      );
+      const cleanTarget = namaUsaha.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const business = HOREKA_BUSINESSES.find((b) => {
+        const cleanB = b.namaUsaha.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return cleanB === cleanTarget || cleanTarget.includes(cleanB) || cleanB.includes(cleanTarget);
+      });
       const horekaId = business ? business.id : `hor-${namaUsaha.toLowerCase().replace(/\s+/g, '-')}`;
 
       records.push({

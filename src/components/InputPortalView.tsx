@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useWasteData } from '../context/WasteDataContext';
 import { KELURAHAN_LIST } from '../data/initialData';
 import { KelurahanId, WasteComposition, PakanCollectorInput } from '../types/waste';
@@ -55,6 +55,12 @@ export const InputPortalView: React.FC = () => {
     preselectedInputKelurahan || 'BULOGADING'
   );
 
+  // Flags to prevent useEffect from reloading just-saved data into the input form
+  const justSavedOrganikRef = useRef<boolean>(false);
+  const justSavedAnorganikRef = useRef<boolean>(false);
+  const justSavedResiduRef = useRef<boolean>(false);
+  const justSavedHorekaRef = useRef<boolean>(false);
+
   // --- FORM STATE: ORGANIK ---
   const [composition, setComposition] = useState<WasteComposition>({
     makananTpa: 0,
@@ -94,6 +100,11 @@ export const InputPortalView: React.FC = () => {
 
   // Load existing ORGANIK data
   useEffect(() => {
+    if (justSavedOrganikRef.current) {
+      justSavedOrganikRef.current = false;
+      return;
+    }
+
     const existing = getRecordForDateAndKelurahan(selectedDate, selectedKelurahan);
     const kelCollectors = collectors.filter(
       (c) => c.kelurahanId === selectedKelurahan && c.active
@@ -138,6 +149,11 @@ export const InputPortalView: React.FC = () => {
 
   // Load existing ANORGANIK data
   useEffect(() => {
+    if (justSavedAnorganikRef.current) {
+      justSavedAnorganikRef.current = false;
+      return;
+    }
+
     const existing = anorganikDailyRecords.find(
       (r) => r.date === selectedDate && r.kelurahanId === selectedKelurahan
     );
@@ -154,6 +170,11 @@ export const InputPortalView: React.FC = () => {
 
   // Load existing RESIDU data
   useEffect(() => {
+    if (justSavedResiduRef.current) {
+      justSavedResiduRef.current = false;
+      return;
+    }
+
     const existing = residuRecords.find(
       (r) => r.date === selectedDate && r.kelurahanId === selectedKelurahan
     );
@@ -173,22 +194,47 @@ export const InputPortalView: React.FC = () => {
   }, [selectedDate, selectedKelurahan, residuRecords]);
 
   // Handle Save Organik
-  const handleSubmitOrganik = (e: React.FormEvent) => {
-    e.preventDefault();
-    saveDailyRecord({
+  const handleSubmitOrganik = async (e?: React.FormEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
+    justSavedOrganikRef.current = true;
+    await saveDailyRecord({
       date: selectedDate,
       kelurahanId: selectedKelurahan,
       composition,
       pakanInputs,
       submittedBy: operatorName,
     });
+
+    // Reset formulir kembali kosong/0 seperti awal
+    setComposition({
+      makananTpa: 0,
+      makananTps3r: 0,
+      sisaBuahTpa: 0,
+      sisaBuahTps3r: 0,
+      sisaSayurTpa: 0,
+      sisaSayurTps3r: 0,
+      daunTpa: 0,
+      daunTps3r: 0,
+    });
+    const kelCollectors = collectors.filter(
+      (c) => c.kelurahanId === selectedKelurahan && c.active
+    );
+    setPakanInputs(
+      kelCollectors.map((c) => ({
+        collectorId: c.id,
+        collectorName: c.name,
+        weightKg: 0,
+      }))
+    );
+    setIsExistingOrganik(false);
   };
 
   // Handle Save Anorganik
-  const handleSubmitAnorganik = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmitAnorganik = async (e?: React.FormEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
+    justSavedAnorganikRef.current = true;
     const totalKg = (satgasMobilKg || 0) + (satgasFukudaKg || 0);
-    saveAnorganikDailyRecord({
+    await saveAnorganikDailyRecord({
       date: selectedDate,
       kelurahanId: selectedKelurahan,
       satgasMobilKg,
@@ -197,12 +243,18 @@ export const InputPortalView: React.FC = () => {
       catatan: anorganikNotes,
       submittedBy: operatorName,
     });
+
+    // Reset formulir kembali kosong/0 seperti awal
+    setSatgasMobilKg(0);
+    setSatgasFukudaKg(0);
+    setAnorganikNotes('');
   };
 
   // Handle Save Residu
-  const handleSubmitResidu = (e: React.FormEvent) => {
-    e.preventDefault();
-    saveResiduRecord({
+  const handleSubmitResidu = async (e?: React.FormEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
+    justSavedResiduRef.current = true;
+    await saveResiduRecord({
       date: selectedDate,
       kelurahanId: selectedKelurahan,
       beratKg: beratResiduKg,
@@ -212,6 +264,10 @@ export const InputPortalView: React.FC = () => {
       catatan: residuCatatan,
       submittedBy: operatorName,
     });
+
+    // Reset formulir kembali kosong/0 seperti awal
+    setBeratResiduKg(0);
+    setResiduCatatan('');
   };
 
   // --- FORM STATE: HOREKA ---
@@ -244,6 +300,11 @@ export const InputPortalView: React.FC = () => {
 
   // Load existing HOREKA data
   useEffect(() => {
+    if (justSavedHorekaRef.current) {
+      justSavedHorekaRef.current = false;
+      return;
+    }
+
     if (!selectedHorekaId) return;
     const existing = horekaDailyRecords.find(
       (r) => r.date === selectedDate && r.horekaId === selectedHorekaId
@@ -260,10 +321,11 @@ export const InputPortalView: React.FC = () => {
   }, [selectedDate, selectedHorekaId, horekaDailyRecords]);
 
   // Handle Save Horeka
-  const handleSubmitHoreka = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmitHoreka = async (e?: React.FormEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!selectedHorekaId) return;
-    saveHorekaDailyRecord({
+    justSavedHorekaRef.current = true;
+    await saveHorekaDailyRecord({
       date: selectedDate,
       horekaId: selectedHorekaId,
       kelurahanId: selectedKelurahan,
@@ -272,6 +334,11 @@ export const InputPortalView: React.FC = () => {
       residuKg: Number(horekaResiduKg || 0),
       operatorName,
     });
+
+    // Reset formulir kembali kosong/0 seperti awal
+    setHorekaOrganikKg(0);
+    setHorekaAnorganikKg(0);
+    setHorekaResiduKg(0);
   };
 
   // Add new collector modal submit

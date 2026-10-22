@@ -71,6 +71,7 @@ const STORAGE_KEYS = {
 
 export type ActiveTab = 'dashboard' | 'residu' | 'official-format' | 'input' | 'table' | 'compliance';
 export type InputSubTab = 'organik' | 'anorganik' | 'residu' | 'horeka';
+export type RekapSubTab = 'organik' | 'anorganik' | 'residu' | 'horeka';
 
 interface WasteDataContextType {
   records: DailyRecord[];
@@ -98,6 +99,19 @@ interface WasteDataContextType {
   setActiveTab: (tab: ActiveTab) => void;
   activeInputSubTab: InputSubTab;
   setActiveInputSubTab: (subTab: InputSubTab) => void;
+  activeRekapSubTab: RekapSubTab;
+  setActiveRekapSubTab: (subTab: RekapSubTab) => void;
+  rekapColumnView: 'daily' | 'categories';
+  setRekapColumnView: (view: 'daily' | 'categories') => void;
+  rekapSearchQuery: string;
+  setRekapSearchQuery: (query: string) => void;
+  navigateToRekap: (
+    subTab: RekapSubTab,
+    options?: {
+      columnView?: 'daily' | 'categories';
+      searchQuery?: string;
+    }
+  ) => void;
   preselectedInputKelurahan: KelurahanId | null;
   setPreselectedInputKelurahan: (k: KelurahanId | null) => void;
   saveDailyRecord: (record: Omit<DailyRecord, 'id' | 'updatedAt'>) => Promise<void>;
@@ -251,6 +265,32 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   const [activeInputSubTab, setActiveInputSubTab] = useState<InputSubTab>('organik');
+  const [activeRekapSubTab, setActiveRekapSubTab] = useState<RekapSubTab>('organik');
+  const [rekapColumnView, setRekapColumnView] = useState<'daily' | 'categories'>('daily');
+  const [rekapSearchQuery, setRekapSearchQuery] = useState<string>('');
+
+  const navigateToRekap = (
+    subTab: RekapSubTab,
+    options?: {
+      columnView?: 'daily' | 'categories';
+      searchQuery?: string;
+    }
+  ) => {
+    setActiveRekapSubTab(subTab);
+    if (options?.columnView) {
+      setRekapColumnView(options.columnView);
+    }
+    if (options?.searchQuery !== undefined) {
+      setRekapSearchQuery(options.searchQuery);
+    } else {
+      setRekapSearchQuery('');
+    }
+    setActiveTab('table');
+    // Scroll smoothly to top
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   const [filter, setFilterState] = useState<FilterState>({
     month: '2026-10',
@@ -1338,6 +1378,13 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         anorganikGabunganMatrix,
         activeInputSubTab,
         setActiveInputSubTab,
+        activeRekapSubTab,
+        setActiveRekapSubTab,
+        rekapColumnView,
+        setRekapColumnView,
+        rekapSearchQuery,
+        setRekapSearchQuery,
+        navigateToRekap,
         saveResiduRecord,
         saveAnorganikRecord,
         saveAnorganikDailyRecord,

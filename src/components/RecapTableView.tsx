@@ -48,22 +48,41 @@ export const RecapTableView: React.FC<RecapTableViewProps> = ({
     syncFromGoogleSheets,
     isSyncing,
     lastSyncTime,
+    activeRekapSubTab,
+    setActiveRekapSubTab,
+    rekapColumnView,
+    setRekapColumnView,
+    rekapSearchQuery,
+    setRekapSearchQuery,
   } = useWasteData();
 
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
 
-  // Sub tab: 'organik' | 'anorganik' | 'residu' | 'horeka'
-  const [rekapSubTab, setRekapSubTab] = useState<'organik' | 'anorganik' | 'residu' | 'horeka'>('organik');
+  // Alias for backward-compatible JSX
+  const rekapSubTab = activeRekapSubTab;
+  const setRekapSubTab = setActiveRekapSubTab;
+  const searchQuery = rekapSearchQuery;
+  const setSearchQuery = setRekapSearchQuery;
+  const columnView = rekapColumnView;
+  const setColumnView = setRekapColumnView;
 
-  // Search filter inside table
-  const [searchQuery, setSearchQuery] = useState<string>('');
   // Expanded kelurahan set
   const [expandedKelurahan, setExpandedKelurahan] = useState<Set<KelurahanId>>(
     new Set(['BARU', 'BULOGADING'])
   );
 
-  // View mode: 'daily' (shows days 1..21) or 'summary' (shows total composition categories)
-  const [columnView, setColumnView] = useState<'daily' | 'categories'>('daily');
+  // Auto-expand matched kelurahan when search query changes (e.g. from dashboard card click)
+  React.useEffect(() => {
+    if (rekapSearchQuery.trim()) {
+      const matched = KELURAHAN_LIST.filter((k) =>
+        k.name.toLowerCase().includes(rekapSearchQuery.toLowerCase()) ||
+        k.id.toLowerCase().includes(rekapSearchQuery.toLowerCase())
+      ).map((k) => k.id);
+      if (matched.length > 0) {
+        setExpandedKelurahan((prev) => new Set([...prev, ...matched]));
+      }
+    }
+  }, [rekapSearchQuery]);
 
   // Days list in current filter range
   const daysList = useMemo(() => {

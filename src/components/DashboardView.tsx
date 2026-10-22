@@ -200,7 +200,7 @@ export const DashboardView: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider group-hover:text-sky-800 transition-colors duration-200">
-                  Angkutan TPA (Bosowa)
+                  Angkutan TPA
                 </span>
                 <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-700 flex items-center justify-center group-hover:scale-110 group-hover:bg-sky-100 transition-all duration-300 ease-out">
                   <Truck className="w-4 h-4" />

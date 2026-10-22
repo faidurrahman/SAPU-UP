@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useWasteData } from '../context/WasteDataContext';
+import { useAuth } from '../context/AuthContext';
 import { KELURAHAN_LIST } from '../data/initialData';
 import { KelurahanId, WasteComposition, PakanCollectorInput } from '../types/waste';
 import {
@@ -22,6 +23,7 @@ import {
   Scale,
   Sparkles,
   Store,
+  Lock,
 } from 'lucide-react';
 import { ScrollReveal } from './ScrollReveal';
 
@@ -49,11 +51,16 @@ export const InputPortalView: React.FC = () => {
     setActiveInputSubTab,
   } = useWasteData();
 
-  // Selected date and kelurahan
+  const { currentUser } = useAuth();
+
+  // Selected date and kelurahan - locked to currentUser.kelurahanId if role is 'kelurahan'
   const [selectedDate, setSelectedDate] = useState<string>('2026-10-22');
-  const [selectedKelurahan, setSelectedKelurahan] = useState<KelurahanId>(
-    preselectedInputKelurahan || 'BULOGADING'
-  );
+  const [selectedKelurahan, setSelectedKelurahan] = useState<KelurahanId>(() => {
+    if (currentUser?.role === 'kelurahan' && currentUser.kelurahanId) {
+      return currentUser.kelurahanId;
+    }
+    return preselectedInputKelurahan || 'BULOGADING';
+  });
 
   // Flags to prevent useEffect from reloading just-saved data into the input form
   const justSavedOrganikRef = useRef<boolean>(false);
@@ -73,7 +80,12 @@ export const InputPortalView: React.FC = () => {
     daunTps3r: 0,
   });
   const [pakanInputs, setPakanInputs] = useState<PakanCollectorInput[]>([]);
-  const [operatorName, setOperatorName] = useState<string>('Petugas Kebersihan Kelurahan');
+  const [operatorName, setOperatorName] = useState<string>(() => {
+    if (currentUser?.role === 'kelurahan' && currentUser.displayName) {
+      return `Petugas Kebersihan ${currentUser.displayName}`;
+    }
+    return 'Petugas Kecamatan Ujung Pandang';
+  });
   const [showAddCollectorModal, setShowAddCollectorModal] = useState<boolean>(false);
   const [newCollectorName, setNewCollectorName] = useState<string>('');
   const [newCollectorPhone, setNewCollectorPhone] = useState<string>('');
@@ -91,12 +103,15 @@ export const InputPortalView: React.FC = () => {
   const [jamPengangkutan, setJamPengangkutan] = useState<string>('06:30 - 08:00 WITA');
   const [residuCatatan, setResiduCatatan] = useState<string>('');
 
-  // Sync preselected kelurahan
+  // Enforce locked kelurahan for kelurahan role
   useEffect(() => {
-    if (preselectedInputKelurahan) {
+    if (currentUser?.role === 'kelurahan' && currentUser.kelurahanId) {
+      setSelectedKelurahan(currentUser.kelurahanId);
+      setOperatorName(`Petugas Kebersihan ${currentUser.displayName}`);
+    } else if (preselectedInputKelurahan) {
       setSelectedKelurahan(preselectedInputKelurahan);
     }
-  }, [preselectedInputKelurahan]);
+  }, [currentUser, preselectedInputKelurahan]);
 
   // Load existing ORGANIK data
   useEffect(() => {
@@ -388,21 +403,38 @@ export const InputPortalView: React.FC = () => {
 
             {/* Quick Selectors for Kelurahan and Date */}
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs">
-                <Building2 className="w-4 h-4 text-emerald-700" />
-                <label className="font-semibold text-slate-700">Kelurahan:</label>
-                <select
-                  value={selectedKelurahan}
-                  onChange={(e) => setSelectedKelurahan(e.target.value as KelurahanId)}
-                  className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer"
-                >
-                  {KELURAHAN_LIST.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {currentUser?.role === 'kelurahan' ? (
+                <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-300/80 rounded-lg px-3 py-1.5 text-xs">
+                  <Building2 className="w-4 h-4 text-emerald-700" />
+                  <label className="font-semibold text-emerald-900">Kelurahan:</label>
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-950 bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300">
+                    <Lock className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                    <span>{activeMeta?.name || currentUser.displayName}</span>
+                    <span className="text-[9px] bg-emerald-700 text-white font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                      Terkunci
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs">
+                  <Building2 className="w-4 h-4 text-emerald-700" />
+                  <label className="font-semibold text-slate-700">Kelurahan:</label>
+                  <select
+                    value={selectedKelurahan}
+                    onChange={(e) => setSelectedKelurahan(e.target.value as KelurahanId)}
+                    className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer"
+                  >
+                    {KELURAHAN_LIST.map((k) => (
+                      <option key={k.id} value={k.id}>
+                        {k.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] bg-slate-200 text-slate-700 font-semibold px-1.5 py-0.5 rounded hidden sm:inline">
+                    Admin
+                  </span>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs">
                 <Calendar className="w-4 h-4 text-slate-500" />
@@ -416,6 +448,21 @@ export const InputPortalView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Locked Notice for Kelurahan Account */}
+          {currentUser?.role === 'kelurahan' && (
+            <div className="mt-4 bg-emerald-50/70 border border-emerald-200 rounded-xl px-3.5 py-2.5 text-xs flex items-center justify-between gap-3 text-emerald-950">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>
+                  Anda masuk sebagai <strong>{currentUser.displayName}</strong>. Seluruh formulir timbulan (Organik, Anorganik, Residu, & Horeka) terkunci khusus pada wilayah Anda agar tidak terjadi salah input.
+                </span>
+              </div>
+              <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-200/60 px-2 py-0.5 rounded">
+                Akses Terproteksi
+              </span>
+            </div>
+          )}
 
           {/* Sub-Menu Tabs Switcher */}
           <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">

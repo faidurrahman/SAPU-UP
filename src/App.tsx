@@ -3,8 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { WasteDataProvider, useWasteData } from './context/WasteDataContext';
+import React, { useState, useEffect } from 'react';
+import { WasteDataProvider, useWasteData, ActiveTab } from './context/WasteDataContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { LoginPage } from './components/LoginPage';
 import { Navbar } from './components/Navbar';
 import { DashboardView } from './components/DashboardView';
 import { InputPortalView } from './components/InputPortalView';
@@ -17,9 +19,25 @@ import { SpreadsheetGuideModal } from './components/SpreadsheetGuideModal';
 import { CheckCircle2, X } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { activeTab, toastMessage, setToastMessage } = useWasteData();
+  const { currentUser, isAuthenticated } = useAuth();
+  const { activeTab, setActiveTab, toastMessage, setToastMessage } = useWasteData();
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [isSpreadsheetGuideOpen, setIsSpreadsheetGuideOpen] = useState<boolean>(false);
+
+  // Restrict kelurahan role to permitted tabs only: dashboard, input, table
+  useEffect(() => {
+    if (currentUser?.role === 'kelurahan') {
+      const allowedTabs: ActiveTab[] = ['dashboard', 'input', 'table'];
+      if (!allowedTabs.includes(activeTab)) {
+        setActiveTab('dashboard');
+      }
+    }
+  }, [currentUser, activeTab, setActiveTab]);
+
+  // If not authenticated, render Login Page
+  if (!isAuthenticated || !currentUser) {
+    return <LoginPage />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-emerald-600 selection:text-white">
@@ -45,7 +63,7 @@ const AppContent: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'dashboard' && <DashboardView />}
-        {activeTab === 'official-format' && <OfficialReportView />}
+        {activeTab === 'official-format' && currentUser.role === 'admin' && <OfficialReportView />}
         {activeTab === 'input' && <InputPortalView />}
         {activeTab === 'table' && (
           <RecapTableView
@@ -53,8 +71,8 @@ const AppContent: React.FC = () => {
             onOpenSpreadsheetGuide={() => setIsSpreadsheetGuideOpen(true)}
           />
         )}
-        {activeTab === 'residu' && <ResiduView />}
-        {activeTab === 'compliance' && <ComplianceView />}
+        {activeTab === 'residu' && currentUser.role === 'admin' && <ResiduView />}
+        {activeTab === 'compliance' && currentUser.role === 'admin' && <ComplianceView />}
       </main>
 
       {/* Printable Report Modal */}
@@ -90,8 +108,10 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <WasteDataProvider>
-      <AppContent />
-    </WasteDataProvider>
+    <AuthProvider>
+      <WasteDataProvider>
+        <AppContent />
+      </WasteDataProvider>
+    </AuthProvider>
   );
 }

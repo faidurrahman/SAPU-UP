@@ -176,7 +176,14 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [records, setRecords] = useState<DailyRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.RECORDS);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed: DailyRecord[] = JSON.parse(saved);
+        // Verify if date 22 has the real official data (Baru makananTps3r === 750)
+        const d22Baru = parsed.find((r) => r.date === '2026-10-22' && r.kelurahanId === 'BARU');
+        if (d22Baru && d22Baru.composition.makananTps3r === 750) {
+          return parsed;
+        }
+      }
     } catch (e) {
       console.error('Error loading records from localStorage:', e);
     }
@@ -446,22 +453,93 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       ]);
 
       let updatedCount = 0;
+      let minDate = '';
+      let maxDate = '';
+
+      const checkDateBounds = (dateStr: string) => {
+        if (!dateStr) return;
+        if (!minDate || dateStr < minDate) minDate = dateStr;
+        if (!maxDate || dateStr > maxDate) maxDate = dateStr;
+      };
 
       if (orgRes.success && orgRes.records.length > 0) {
-        setRecords(orgRes.records);
+        setRecords((prev) => {
+          const map = new Map<string, DailyRecord>();
+          for (const r of prev) map.set(r.id, r);
+          for (const r of orgRes.records) {
+            const existing = map.get(r.id);
+            const rTotal =
+              (r.composition.makananTpa || 0) +
+              (r.composition.makananTps3r || 0) +
+              (r.composition.sisaBuahTpa || 0) +
+              (r.composition.sisaBuahTps3r || 0) +
+              (r.composition.sisaSayurTpa || 0) +
+              (r.composition.sisaSayurTps3r || 0) +
+              (r.composition.daunTpa || 0) +
+              (r.composition.daunTps3r || 0) +
+              (r.pakanInputs?.reduce((s, p) => s + (p.weightKg || 0), 0) || 0);
+
+            if (!existing || rTotal > 0) {
+              map.set(r.id, r);
+            }
+            checkDateBounds(r.date);
+          }
+          return Array.from(map.values());
+        });
         updatedCount += orgRes.records.length;
       }
+
       if (anorgRes.success && anorgRes.records.length > 0) {
-        setAnorganikDailyRecords(anorgRes.records);
+        setAnorganikDailyRecords((prev) => {
+          const map = new Map<string, AnorganikDailyRecord>();
+          for (const r of prev) map.set(r.id, r);
+          for (const r of anorgRes.records) {
+            map.set(r.id, r);
+            checkDateBounds(r.date);
+          }
+          return Array.from(map.values());
+        });
         updatedCount += anorgRes.records.length;
       }
+
       if (resRes.success && resRes.records.length > 0) {
-        setResiduRecords(resRes.records);
+        setResiduRecords((prev) => {
+          const map = new Map<string, ResiduRecord>();
+          for (const r of prev) map.set(r.id, r);
+          for (const r of resRes.records) {
+            map.set(r.id, r);
+            checkDateBounds(r.date);
+          }
+          return Array.from(map.values());
+        });
         updatedCount += resRes.records.length;
       }
+
       if (horRes.success && horRes.records.length > 0) {
-        setHorekaDailyRecords(horRes.records);
+        setHorekaDailyRecords((prev) => {
+          const map = new Map<string, HorekaDailyRecord>();
+          for (const r of prev) map.set(`${r.date}_${r.horekaId}`, r);
+          for (const r of horRes.records) {
+            map.set(`${r.date}_${r.horekaId}`, r);
+            checkDateBounds(r.date);
+          }
+          return Array.from(map.values());
+        });
         updatedCount += horRes.records.length;
+      }
+
+      // Auto expand filter date bounds if synced records have dates outside current range
+      if (minDate || maxDate) {
+        setFilterState((prev) => {
+          let newStart = prev.startDate;
+          let newEnd = prev.endDate;
+          if (minDate && minDate < prev.startDate) newStart = minDate;
+          if (maxDate && maxDate > prev.endDate) newEnd = maxDate;
+          if (newStart !== prev.startDate || newEnd !== prev.endDate) {
+            return { ...prev, startDate: newStart, endDate: newEnd };
+          }
+          return prev;
+        });
       }
 
       const now = new Date().toISOString();

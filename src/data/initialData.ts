@@ -341,6 +341,62 @@ const EXACT_DAY_20_MAP: Record<KelurahanId, {
   },
 };
 
+// Day 22 exact values directly matching the official spreadsheet data
+const EXACT_DAY_22_MAP: Record<KelurahanId, {
+  composition: {
+    makananTpa: number;
+    makananTps3r: number;
+    sisaBuahTpa: number;
+    sisaBuahTps3r: number;
+    sisaSayurTpa: number;
+    sisaSayurTps3r: number;
+    daunTpa: number;
+    daunTps3r: number;
+  };
+  pakan: Record<string, number>;
+}> = {
+  BARU: {
+    composition: { makananTpa: 433, makananTps3r: 750, sisaBuahTpa: 0, sisaBuahTps3r: 0, sisaSayurTpa: 0, sisaSayurTps3r: 0, daunTpa: 0, daunTps3r: 0 },
+    pakan: { 'col-musliadi': 56 },
+  },
+  BULOGADING: {
+    composition: { makananTpa: 0, makananTps3r: 75, sisaBuahTpa: 30, sisaBuahTps3r: 0, sisaSayurTpa: 15, sisaSayurTps3r: 0, daunTpa: 80, daunTps3r: 0 },
+    pakan: { 'col-ansu': 49, 'col-awal': 48 },
+  },
+  'LAE-LAE': {
+    composition: { makananTpa: 0, makananTps3r: 0, sisaBuahTpa: 0, sisaBuahTps3r: 0, sisaSayurTpa: 0, sisaSayurTps3r: 0, daunTpa: 0, daunTps3r: 0 },
+    pakan: {},
+  },
+  LAJANGIRU: {
+    composition: { makananTpa: 5, makananTps3r: 0, sisaBuahTpa: 3, sisaBuahTps3r: 0, sisaSayurTpa: 3, sisaSayurTps3r: 0, daunTpa: 10, daunTps3r: 0 },
+    pakan: {},
+  },
+  LOSARI: {
+    composition: { makananTpa: 0, makananTps3r: 0, sisaBuahTpa: 0, sisaBuahTps3r: 0, sisaSayurTpa: 0, sisaSayurTps3r: 0, daunTpa: 105, daunTps3r: 0 },
+    pakan: { 'col-hasrul': 30 },
+  },
+  MALOKU: {
+    composition: { makananTpa: 37, makananTps3r: 0, sisaBuahTpa: 36, sisaBuahTps3r: 0, sisaSayurTpa: 56, sisaSayurTps3r: 0, daunTpa: 19, daunTps3r: 0 },
+    pakan: { 'col-erwin': 57, 'col-samsir': 56 },
+  },
+  MANGKURA: {
+    composition: { makananTpa: 0, makananTps3r: 85, sisaBuahTpa: 35, sisaBuahTps3r: 0, sisaSayurTpa: 8, sisaSayurTps3r: 0, daunTpa: 55, daunTps3r: 0 },
+    pakan: { 'col-malalengga': 38, 'col-abd-rahman': 38 },
+  },
+  'PISANG SELATAN': {
+    composition: { makananTpa: 13, makananTps3r: 0, sisaBuahTpa: 6, sisaBuahTps3r: 0, sisaSayurTpa: 0, sisaSayurTps3r: 0, daunTpa: 3, daunTps3r: 0 },
+    pakan: {},
+  },
+  'PISANG UTARA': {
+    composition: { makananTpa: 30, makananTps3r: 0, sisaBuahTpa: 0, sisaBuahTps3r: 0, sisaSayurTpa: 0, sisaSayurTps3r: 0, daunTpa: 0, daunTps3r: 0 },
+    pakan: {},
+  },
+  SAWERIGADING: {
+    composition: { makananTpa: 29, makananTps3r: 0, sisaBuahTpa: 0, sisaBuahTps3r: 0, sisaSayurTpa: 0, sisaSayurTps3r: 0, daunTpa: 157, daunTps3r: 0 },
+    pakan: { 'col-nurdin-aco': 40 },
+  },
+};
+
 export function generateInitialDailyRecords(): DailyRecord[] {
   const records: DailyRecord[] = [];
 
@@ -379,6 +435,21 @@ export function generateInitialDailyRecords(): DailyRecord[] {
           updatedAt: `${dateStr}T11:30:00.000Z`,
           submittedBy: `Petugas Kebersihan ${spec.kelurahanId}`,
         });
+      } else if (day === 22 && EXACT_DAY_22_MAP[spec.kelurahanId]) {
+        const exact = EXACT_DAY_22_MAP[spec.kelurahanId];
+        records.push({
+          id: `${dateStr}_${spec.kelurahanId}`,
+          date: dateStr,
+          kelurahanId: spec.kelurahanId,
+          composition: exact.composition,
+          pakanInputs: spec.collectors.map((c) => ({
+            collectorId: c.id,
+            collectorName: c.name,
+            weightKg: exact.pakan[c.id] || 0,
+          })),
+          updatedAt: `${dateStr}T11:30:00.000Z`,
+          submittedBy: `Staf Kelurahan ${spec.kelurahanId}`,
+        });
       } else {
         records.push({
           id: `${dateStr}_${spec.kelurahanId}`,
@@ -409,18 +480,17 @@ export function generateInitialDailyRecords(): DailyRecord[] {
   return records;
 }
 
-// Initial TPS3R processing records for October 1-21, 2026
+// Initial TPS3R processing records for October 1-22, 2026
 // Maggot: cumulative 20.452 Kg, Open Windrow: cumulative 1.950 Kg
 export function generateInitialTps3rProcessing(): Tps3rProcessing[] {
   const maggotDaily = distributeOver21Days(20452, DAY_WEIGHTS);
   const openWdrDaily = distributeOver21Days(1950, DAY_WEIGHTS);
 
   const list: Tps3rProcessing[] = [];
-  for (let day = 1; day <= 21; day++) {
+  for (let day = 1; day <= 22; day++) {
     const dayStr = day < 10 ? '0' + day : '' + day;
-    // On day 20, exactly 780 Kg Maggot and 0 Open Windrow as given in the official prompt
-    const m = day === 20 ? 780 : maggotDaily[day - 1];
-    const w = day === 20 ? 0 : openWdrDaily[day - 1];
+    const m = day === 20 ? 780 : (day === 22 ? 850 : maggotDaily[(day - 1) % 21]);
+    const w = day === 20 ? 0 : (day === 22 ? 60 : openWdrDaily[(day - 1) % 21]);
     list.push({
       date: `2026-10-${dayStr}`,
       maggotKg: m,
@@ -434,7 +504,7 @@ export function generateInitialTps3rProcessing(): Tps3rProcessing[] {
 export function generateInitialOfficialPengelolaan(): OfficialDailyPengelolaan[] {
   const list: OfficialDailyPengelolaan[] = [];
 
-  for (let day = 1; day <= 21; day++) {
+  for (let day = 1; day <= 22; day++) {
     const dayStr = day < 10 ? '0' + day : '' + day;
     const dateStr = `2026-10-${dayStr}`;
 
@@ -449,6 +519,19 @@ export function generateInitialOfficialPengelolaan(): OfficialDailyPengelolaan[]
         pengelolaanBioporiKg: 0,
         tps3rKarebosiMaggotKg: 780,
         tps3rKarebosiOpenWindrowKg: 0,
+        raisedBedKg: 0,
+      });
+    } else if (day === 22) {
+      // Thursday 22 October 2026 - Exact official report matching spreadsheet
+      list.push({
+        date: dateStr,
+        kapasaBosowaKg: 0,
+        bintang5Kg: 1168,
+        pengelolaanTebaKg: 0,
+        pakanTernakKg: 412,
+        pengelolaanBioporiKg: 0,
+        tps3rKarebosiMaggotKg: 850,
+        tps3rKarebosiOpenWindrowKg: 60,
         raisedBedKg: 0,
       });
     } else {

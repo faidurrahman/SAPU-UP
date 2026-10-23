@@ -31,7 +31,7 @@ export const ComplianceView: React.FC = () => {
     setActiveTab,
   } = useWasteData();
 
-  const [selectedDate, setSelectedDate] = useState<string>('2026-10-21');
+  const [selectedDate, setSelectedDate] = useState<string>('2026-10-22');
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [newCollectorName, setNewCollectorName] = useState<string>('');
   const [newCollectorKelurahan, setNewCollectorKelurahan] = useState<KelurahanId>('BARU');

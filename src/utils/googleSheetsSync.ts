@@ -1,5 +1,5 @@
 import { DailyRecord, KelurahanId, WasteComposition, PakanCollectorInput, AnorganikDailyRecord, ResiduRecord } from '../types/waste';
-import { KELURAHAN_LIST } from '../data/initialData';
+import { KELURAHAN_LIST, INITIAL_COLLECTORS } from '../data/initialData';
 import { HorekaDailyRecord, HOREKA_BUSINESSES } from '../data/horekaData';
 
 export const DEFAULT_SPREADSHEET_ID = '1tQgk10GLzPEdv60mztUPR8aO_bFX3yWW8yxaoi8b5eU';
@@ -91,7 +91,12 @@ function doGet(e) {
         var headerKey = String(headers[h]).trim();
         var val = row[h];
         if (val instanceof Date) {
-          val = Utilities.formatDate(val, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
+          try {
+            var tz = (ss && ss.getSpreadsheetTimeZone && ss.getSpreadsheetTimeZone()) || Session.getScriptTimeZone() || "Asia/Makassar";
+            val = Utilities.formatDate(val, tz, "yyyy-MM-dd");
+          } catch(e) {
+            val = Utilities.formatDate(val, "GMT+8", "yyyy-MM-dd");
+          }
         }
         obj[headerKey] = val;
       }
@@ -168,12 +173,17 @@ function handleSaveOrganik(ss, record) {
   for (var i = 1; i < data.length; i++) {
     var rDate = data[i][1];
     if (rDate instanceof Date) {
-      rDate = Utilities.formatDate(rDate, ss.getSpreadsheetTimeZone(), "yyyy-MM-dd");
+      try {
+        var tz = (ss && ss.getSpreadsheetTimeZone && ss.getSpreadsheetTimeZone()) || Session.getScriptTimeZone() || "Asia/Makassar";
+        rDate = Utilities.formatDate(rDate, tz, "yyyy-MM-dd");
+      } catch(e) {
+        rDate = Utilities.formatDate(rDate, "GMT+8", "yyyy-MM-dd");
+      }
     } else {
       rDate = String(rDate).trim();
     }
 
-    var rKel = String(data[i][2] || data[i][3]).trim().toUpperCase();
+    var rKel = (String(data[i][2] || '') + " " + String(data[i][3] || '')).trim().toUpperCase();
 
     if (rDate === dateStr && (rKel.indexOf(kelStr) !== -1 || kelStr.indexOf(rKel) !== -1)) {
       targetRowIndex = i + 1;
@@ -459,22 +469,196 @@ function parseCsvLine(line: string): string[] {
 export function normalizeDateString(rawDate: string): string {
   if (!rawDate) return '';
   const cleaned = rawDate.replace(/['"]/g, '').trim();
-  // Check if YYYY-MM-DD
+
+  // If already YYYY-MM-DD
   if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(cleaned)) {
     const parts = cleaned.split('-');
     return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
   }
-  // Check if DD/MM/YYYY or D/M/YYYY
+
+  // If DD/MM/YYYY or MM/DD/YYYY
   if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(cleaned)) {
     const parts = cleaned.split('/');
+    const first = parseInt(parts[0], 10);
+    const second = parseInt(parts[1], 10);
+    // If first > 12, it must be DD/MM/YYYY
+    if (first > 12) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    // If second > 12, it must be MM/DD/YYYY
+    if (second > 12) {
+      return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+    }
+    // Default Indonesian format DD/MM/YYYY
     return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
   }
-  // Check if DD-MM-YYYY or D-M-YYYY
+
+  // If DD-MM-YYYY or MM-DD-YYYY
   if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(cleaned)) {
     const parts = cleaned.split('-');
+    const first = parseInt(parts[0], 10);
+    const second = parseInt(parts[1], 10);
+    if (first > 12) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    if (second > 12) {
+      return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+    }
     return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
   }
+
   return cleaned;
+}
+
+/**
+ * Helper to parse pakan collector inputs from string and distribute weight
+ */
+export function parsePakanInputs(rawCollector: string, totalWeight: number, kelurahanId: KelurahanId): PakanCollectorInput[] {
+  if (totalWeight <= 0) return [];
+  const inputs: PakanCollectorInput[] = [];
+
+  // Check if formatted like "Ansu (47Kg), Awal Wahid (36Kg)"
+  const withWeights = rawCollector.match(/([A-Za-z\s.]+)\s*\(([0-9.,]+)\s*Kg\)/gi);
+  if (withWeights && withWeights.length > 0) {
+    for (const match of withWeights) {
+      const parts = match.match(/([A-Za-z\s.]+)\s*\(([0-9.,]+)\s*Kg\)/i);
+      if (parts) {
+        const name = parts[1].trim();
+        const weight = parseIndonesianNumber(parts[2]);
+        inputs.push({
+          collectorId: `col-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+          collectorName: name,
+          weightKg: weight,
+        });
+      }
+    }
+    if (inputs.length > 0) return inputs;
+  }
+
+  const kelCollectors = INITIAL_COLLECTORS.filter((c) => c.kelurahanId === kelurahanId);
+  const names = rawCollector.split(',').map((s) => s.trim()).filter((s) => s.length > 0 && s !== '-');
+
+  if (names.length > 1 && kelCollectors.length > 0) {
+    const matched = names.map((n) =>
+      kelCollectors.find((c) => c.name.toLowerCase().includes(n.toLowerCase()) || n.toLowerCase().includes(c.name.toLowerCase()))
+    );
+    const validCount = matched.filter(Boolean).length || names.length;
+    const baseShare = Math.floor(totalWeight / validCount);
+    let remainder = totalWeight - baseShare * validCount;
+
+    for (let i = 0; i < names.length; i++) {
+      const colObj = matched[i];
+      const colName = colObj ? colObj.name : names[i];
+      const colId = colObj ? colObj.id : `col-${colName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+      const weight = baseShare + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder--;
+
+      inputs.push({
+        collectorId: colId,
+        collectorName: colName,
+        weightKg: weight,
+      });
+    }
+    return inputs;
+  }
+
+  const singleName = names.length === 1 ? names[0] : (kelCollectors[0]?.name || (rawCollector !== '-' ? rawCollector : 'Petugas Pakan'));
+  const matchedSingle = kelCollectors.find((c) => c.name.toLowerCase().includes(singleName.toLowerCase()));
+
+  inputs.push({
+    collectorId: matchedSingle ? matchedSingle.id : `col-${singleName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+    collectorName: matchedSingle ? matchedSingle.name : singleName,
+    weightKg: totalWeight,
+  });
+
+  return inputs;
+}
+
+/**
+ * Helper to parse numbers in Indonesian format (e.g. "1.170", "1,099", "518", "1.099,50")
+ */
+export function parseIndonesianNumber(val: any): number {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const str = String(val).trim();
+  if (!str || str === '-') return 0;
+
+  const cleaned = str.replace(/['"]/g, '').trim();
+
+  // If thousand separator dot, e.g. "1.170" or "16.063" or "1.099"
+  if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+    return Number(cleaned.replace(/\./g, ''));
+  }
+
+  // If thousand separator dot with comma decimal, e.g. "1.170,50"
+  if (/^\d{1,3}(\.\d{3})+,\d+$/.test(cleaned)) {
+    return Number(cleaned.replace(/\./g, '').replace(',', '.'));
+  }
+
+  // If comma used as thousand separator or decimal, e.g. "1,099" or "5,5"
+  if (cleaned.includes(',') && !cleaned.includes('.')) {
+    const parts = cleaned.split(',');
+    if (parts.length === 2 && parts[1].length === 3 && parts[0].length <= 3) {
+      return Number(cleaned.replace(/,/g, ''));
+    }
+    return Number(cleaned.replace(',', '.'));
+  }
+
+  const num = Number(cleaned);
+  return isNaN(num) ? 0 : num;
+}
+
+/**
+ * Flexible Kelurahan ID matching supporting codes, full names, short names, and fuzzy variants
+ */
+export function findKelurahanId(rawStr: string): KelurahanId | undefined {
+  if (!rawStr) return undefined;
+  const upper = rawStr.toUpperCase().trim();
+  const validKelurahanIds: KelurahanId[] = [
+    'BARU',
+    'BULOGADING',
+    'LAE-LAE',
+    'LAJANGIRU',
+    'LOSARI',
+    'MALOKU',
+    'MANGKURA',
+    'PISANG SELATAN',
+    'PISANG UTARA',
+    'SAWERIGADING',
+  ];
+
+  for (const id of validKelurahanIds) {
+    if (upper === id || upper.includes(id)) {
+      return id;
+    }
+  }
+
+  for (const id of validKelurahanIds) {
+    const meta = KELURAHAN_LIST.find((k) => k.id === id);
+    if (meta) {
+      const nameUpper = meta.name.toUpperCase();
+      const shortName = nameUpper.replace('KELURAHAN ', '').trim();
+      if (upper.includes(nameUpper) || upper.includes(shortName)) {
+        return id;
+      }
+      if (meta.code && upper.includes(meta.code)) {
+        return id;
+      }
+    }
+  }
+
+  if (upper.includes('BULO') || upper.includes('GADING')) return 'BULOGADING';
+  if (upper.includes('LAE')) return 'LAE-LAE';
+  if (upper.includes('LAJANG') || upper.includes('IRU')) return 'LAJANGIRU';
+  if (upper.includes('LOSARI')) return 'LOSARI';
+  if (upper.includes('MALOKU')) return 'MALOKU';
+  if (upper.includes('MANGKURA')) return 'MANGKURA';
+  if (upper.includes('PISANG') && upper.includes('SEL')) return 'PISANG SELATAN';
+  if (upper.includes('PISANG') && upper.includes('UT')) return 'PISANG UTARA';
+  if (upper.includes('SAWERI')) return 'SAWERIGADING';
+  if (upper.includes('BARU')) return 'BARU';
+
+  return undefined;
 }
 
 /**
@@ -493,54 +677,85 @@ export async function fetchGoogleSheetsRecords(
         const json = await res.json();
         if (json && json.status === 'success' && Array.isArray(json.records) && json.records.length > 0) {
           const records: DailyRecord[] = [];
-          const validKelurahanIds: KelurahanId[] = [
-            'BARU', 'BULOGADING', 'LAE-LAE', 'LAJANGIRU', 'LOSARI',
-            'MALOKU', 'MANGKURA', 'PISANG SELATAN', 'PISANG UTARA', 'SAWERIGADING',
-          ];
 
           for (const item of json.records) {
-            const rawDate = item['Tanggal'] || item['tanggal'] || item['Date'] || '';
-            const date = normalizeDateString(rawDate);
-            const rawKel = String(item['Nama_Kelurahan'] || item['Kelurahan'] || item['kelurahan'] || '').trim().toUpperCase();
+            const rawDate = item['Tanggal'] || item['tanggal'] || item['Date'] || item['TANGGAL'] || item['Tgl'] || '';
+            const date = normalizeDateString(String(rawDate));
+            const rawKel = String(
+              item['Nama_Kelurahan'] ||
+              item['Nama Kelurahan'] ||
+              item['NAMA KELURAHAN'] ||
+              item['Kelurahan'] ||
+              item['kelurahan'] ||
+              item['KELURAHAN'] ||
+              item['Kelurahan_ID'] ||
+              item['Kelurahan ID'] ||
+              item['Kode_Kelurahan'] ||
+              ''
+            ).trim();
+
             if (!date || !rawKel) continue;
 
-            const matchedKel = validKelurahanIds.find((id) => {
-              const meta = KELURAHAN_LIST.find((k) => k.id === id);
-              return rawKel.includes(id) || (meta && rawKel.includes(meta.name.toUpperCase())) || rawKel === id;
-            });
+            const matchedKel = findKelurahanId(rawKel);
             if (!matchedKel) continue;
 
+            const makananTpa = parseIndonesianNumber(item['Makanan_TPA_Kg'] ?? item['Makanan_TPA'] ?? item['Makanan TPA'] ?? item['makanan_tpa'] ?? item['Makanan (TPA)']);
+            const makananTps3r = parseIndonesianNumber(item['Makanan_TPS3R_Kg'] ?? item['Makanan_TPS3R'] ?? item['Makanan TPS3R'] ?? item['makanan_tps3r'] ?? item['Makanan (TPS3R)']);
+            const sisaBuahTpa = parseIndonesianNumber(item['Sisa_Buah_TPA_Kg'] ?? item['Buah_TPA'] ?? item['Buah TPA'] ?? item['Sisa_Buah_TPA'] ?? item['Sisa Buah TPA'] ?? item['Sisa Buah (TPA)']);
+            const sisaBuahTps3r = parseIndonesianNumber(item['Sisa_Buah_TPS3R_Kg'] ?? item['Buah_TPS3R'] ?? item['Buah TPS3R'] ?? item['Sisa_Buah_TPS3R'] ?? item['Sisa Buah TPS3R'] ?? item['Sisa Buah (TPS3R)']);
+            const sisaSayurTpa = parseIndonesianNumber(item['Sisa_Sayur_TPA_Kg'] ?? item['Sayur_TPA'] ?? item['Sayur TPA'] ?? item['Sisa_Sayur_TPA'] ?? item['Sisa Sayur TPA'] ?? item['Sisa Sayur (TPA)']);
+            const sisaSayurTps3r = parseIndonesianNumber(item['Sisa_Sayur_TPS3R_Kg'] ?? item['Sayur_TPS3R'] ?? item['Sayur TPS3R'] ?? item['Sisa_Sayur_TPS3R'] ?? item['Sisa Sayur TPS3R'] ?? item['Sisa Sayur (TPS3R)']);
+            const daunTpa = parseIndonesianNumber(item['Daun_TPA_Kg'] ?? item['Daun_TPA'] ?? item['Daun TPA'] ?? item['daun_tpa'] ?? item['Daun (TPA)']);
+            const daunTps3r = parseIndonesianNumber(item['Daun_TPS3R_Kg'] ?? item['Daun_TPS3R'] ?? item['Daun TPS3R'] ?? item['daun_tps3r'] ?? item['Daun (TPS3R)']);
+
             const composition: WasteComposition = {
-              makananTpa: Number(item['Makanan_TPA']) || 0,
-              makananTps3r: Number(item['Makanan_TPS3R']) || 0,
-              sisaBuahTpa: Number(item['Buah_TPA']) || 0,
-              sisaBuahTps3r: Number(item['Buah_TPS3R']) || 0,
-              sisaSayurTpa: Number(item['Sayur_TPA']) || 0,
-              sisaSayurTps3r: Number(item['Sayur_TPS3R']) || 0,
-              daunTpa: Number(item['Daun_TPA']) || 0,
-              daunTps3r: Number(item['Daun_TPS3R']) || 0,
+              makananTpa,
+              makananTps3r,
+              sisaBuahTpa,
+              sisaBuahTps3r,
+              sisaSayurTpa,
+              sisaSayurTps3r,
+              daunTpa,
+              daunTps3r,
             };
 
-            const rawCollector = String(item['Petugas_Pakan'] || '-').trim();
-            const pakanWeight = Number(item['Berat_Pakan_Kg']) || 0;
-            const pakanInputs: PakanCollectorInput[] = [];
-            if (pakanWeight > 0) {
-              pakanInputs.push({
-                collectorId: `col-${matchedKel.toLowerCase()}`,
-                collectorName: rawCollector !== '-' ? rawCollector : 'Petugas Pakan',
-                weightKg: pakanWeight,
-              });
-            }
+            const rawCollector = String(item['Nama_Petugas_Pakan'] || item['Petugas_Pakan'] || item['Petugas Pakan'] || item['Petugas_Kebersihan'] || '-').trim();
+            const pakanWeight = parseIndonesianNumber(item['Berat_Pakan_Kg'] ?? item['Berat Pakan Kg'] ?? item['Berat_Pakan'] ?? item['Pakan_Kg'] ?? item['Pakan (Kg)']);
+            const pakanInputs: PakanCollectorInput[] = parsePakanInputs(rawCollector, pakanWeight, matchedKel);
 
-            records.push({
-              id: `${date}_${matchedKel}`,
+            const totalWeight = makananTpa + makananTps3r + sisaBuahTpa + sisaBuahTps3r + sisaSayurTpa + sisaSayurTps3r + daunTpa + daunTps3r + pakanWeight;
+            const id = `${date}_${matchedKel}`;
+            const existingIdx = records.findIndex((r) => r.id === id);
+
+            const newRecord: DailyRecord = {
+              id,
               date,
               kelurahanId: matchedKel,
               composition,
               pakanInputs,
               updatedAt: new Date().toISOString(),
-              submittedBy: String(item['Petugas_Input'] || `Petugas ${matchedKel}`).trim(),
-            });
+              submittedBy: String(item['Petugas_Input'] || item['Petugas Input'] || `Petugas ${matchedKel}`).trim(),
+            };
+
+            if (existingIdx >= 0) {
+              const existing = records[existingIdx];
+              const existingTotal =
+                (existing.composition.makananTpa || 0) +
+                (existing.composition.makananTps3r || 0) +
+                (existing.composition.sisaBuahTpa || 0) +
+                (existing.composition.sisaBuahTps3r || 0) +
+                (existing.composition.sisaSayurTpa || 0) +
+                (existing.composition.sisaSayurTps3r || 0) +
+                (existing.composition.daunTpa || 0) +
+                (existing.composition.daunTps3r || 0) +
+                (existing.pakanInputs?.reduce((s, p) => s + (p.weightKg || 0), 0) || 0);
+
+              if (totalWeight > 0 || existingTotal === 0) {
+                records[existingIdx] = newRecord;
+              }
+            } else {
+              records.push(newRecord);
+            }
           }
 
           if (records.length > 0) {
@@ -569,50 +784,30 @@ export async function fetchGoogleSheetsRecords(
     }
 
     const records: DailyRecord[] = [];
-    const validKelurahanIds: KelurahanId[] = [
-      'BARU',
-      'BULOGADING',
-      'LAE-LAE',
-      'LAJANGIRU',
-      'LOSARI',
-      'MALOKU',
-      'MANGKURA',
-      'PISANG SELATAN',
-      'PISANG UTARA',
-      'SAWERIGADING',
-    ];
 
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      if (cols.length < 14) continue;
+      if (cols.length < 4) continue;
 
       const rawDate = cols[1]?.replace(/['"]/g, '').trim();
       const date = normalizeDateString(rawDate);
-      const rawKel = cols[3]?.replace(/['"]/g, '').trim().toUpperCase();
+      const rawKel = (cols[3] || cols[2])?.replace(/['"]/g, '').trim();
 
       if (!date || !rawKel) continue;
 
-      const matchedKel = validKelurahanIds.find((id) => {
-        const meta = KELURAHAN_LIST.find((k) => k.id === id);
-        return (
-          rawKel.includes(id) ||
-          (meta && rawKel.includes(meta.name.toUpperCase())) ||
-          rawKel === id
-        );
-      });
-
+      const matchedKel = findKelurahanId(rawKel);
       if (!matchedKel) continue;
 
-      const makananTpa = Number(cols[4]) || 0;
-      const makananTps3r = Number(cols[5]) || 0;
-      const sisaBuahTpa = Number(cols[6]) || 0;
-      const sisaBuahTps3r = Number(cols[7]) || 0;
-      const sisaSayurTpa = Number(cols[8]) || 0;
-      const sisaSayurTps3r = Number(cols[9]) || 0;
-      const daunTpa = Number(cols[10]) || 0;
-      const daunTps3r = Number(cols[11]) || 0;
+      const makananTpa = parseIndonesianNumber(cols[4]);
+      const makananTps3r = parseIndonesianNumber(cols[5]);
+      const sisaBuahTpa = parseIndonesianNumber(cols[6]);
+      const sisaBuahTps3r = parseIndonesianNumber(cols[7]);
+      const sisaSayurTpa = parseIndonesianNumber(cols[8]);
+      const sisaSayurTps3r = parseIndonesianNumber(cols[9]);
+      const daunTpa = parseIndonesianNumber(cols[10]);
+      const daunTps3r = parseIndonesianNumber(cols[11]);
       const rawCollector = cols[12]?.replace(/['"]/g, '').trim() || '-';
-      const pakanWeight = Number(cols[13]) || 0;
+      const pakanWeight = parseIndonesianNumber(cols[13]);
       const submittedBy = cols[18]?.replace(/['"]/g, '').trim() || `Petugas ${matchedKel}`;
 
       const composition: WasteComposition = {
@@ -626,24 +821,40 @@ export async function fetchGoogleSheetsRecords(
         daunTps3r,
       };
 
-      const pakanInputs: PakanCollectorInput[] = [];
-      if (pakanWeight > 0) {
-        pakanInputs.push({
-          collectorId: `col-${matchedKel.toLowerCase()}`,
-          collectorName: rawCollector !== '-' ? rawCollector : 'Petugas Pakan',
-          weightKg: pakanWeight,
-        });
-      }
+      const pakanInputs: PakanCollectorInput[] = parsePakanInputs(rawCollector, pakanWeight, matchedKel);
+      const totalWeight = makananTpa + makananTps3r + sisaBuahTpa + sisaBuahTps3r + sisaSayurTpa + sisaSayurTps3r + daunTpa + daunTps3r + pakanWeight;
+      const id = `${date}_${matchedKel}`;
+      const existingIdx = records.findIndex((r) => r.id === id);
 
-      records.push({
-        id: `${date}_${matchedKel}`,
+      const newRecord: DailyRecord = {
+        id,
         date,
         kelurahanId: matchedKel,
         composition,
         pakanInputs,
         updatedAt: new Date().toISOString(),
         submittedBy,
-      });
+      };
+
+      if (existingIdx >= 0) {
+        const existing = records[existingIdx];
+        const existingTotal =
+          (existing.composition.makananTpa || 0) +
+          (existing.composition.makananTps3r || 0) +
+          (existing.composition.sisaBuahTpa || 0) +
+          (existing.composition.sisaBuahTps3r || 0) +
+          (existing.composition.sisaSayurTpa || 0) +
+          (existing.composition.sisaSayurTps3r || 0) +
+          (existing.composition.daunTpa || 0) +
+          (existing.composition.daunTps3r || 0) +
+          (existing.pakanInputs?.reduce((s, p) => s + (p.weightKg || 0), 0) || 0);
+
+        if (totalWeight > 0 || existingTotal === 0) {
+          records[existingIdx] = newRecord;
+        }
+      } else {
+        records.push(newRecord);
+      }
     }
 
     return {
@@ -685,16 +896,16 @@ export async function fetchAnorganikSheetsRecords(
 
           for (const item of json.records) {
             const rawDate = item['Tanggal'] || item['tanggal'] || '';
-            const date = normalizeDateString(rawDate);
-            const rawKel = String(item['Kelurahan'] || item['kelurahan'] || '').trim().toUpperCase();
+            const date = normalizeDateString(String(rawDate));
+            const rawKel = String(item['Kelurahan'] || item['kelurahan'] || '').trim();
             if (!date || !rawKel) continue;
 
-            const matchedKel = validKelurahanIds.find((id) => rawKel.includes(id) || rawKel === id);
+            const matchedKel = findKelurahanId(rawKel);
             if (!matchedKel) continue;
 
-            const satgasMobilKg = Number(item['Satgas_Mobil_Kg'] || item['Mobil_Kg']) || 0;
-            const satgasFukudaKg = Number(item['Satgas_Fukuda_Kg'] || item['Fukuda_Kg']) || 0;
-            const totalKg = Number(item['Total_Kg']) || (satgasMobilKg + satgasFukudaKg);
+            const satgasMobilKg = parseIndonesianNumber(item['Satgas_Mobil_Kg'] ?? item['Satgas Mobil Kg'] ?? item['Mobil_Kg'] ?? item['Satgas Mobil']);
+            const satgasFukudaKg = parseIndonesianNumber(item['Satgas_Fukuda_Kg'] ?? item['Satgas Fukuda Kg'] ?? item['Fukuda_Kg'] ?? item['Satgas Fukuda']);
+            const totalKg = parseIndonesianNumber(item['Total_Kg'] ?? item['Total Kg']) || (satgasMobilKg + satgasFukudaKg);
 
             records.push({
               id: `${date}_${matchedKel}`,
@@ -723,32 +934,20 @@ export async function fetchAnorganikSheetsRecords(
     if (lines.length < 2) return { success: true, records: [] };
 
     const records: AnorganikDailyRecord[] = [];
-    const validKelurahanIds: KelurahanId[] = [
-      'BARU',
-      'BULOGADING',
-      'LAE-LAE',
-      'LAJANGIRU',
-      'LOSARI',
-      'MALOKU',
-      'MANGKURA',
-      'PISANG SELATAN',
-      'PISANG UTARA',
-      'SAWERIGADING',
-    ];
 
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      if (cols.length < 3) continue;
+      if (cols.length < 2) continue;
       const rawDate = cols[0]?.replace(/['"]/g, '').trim();
       const date = normalizeDateString(rawDate);
-      const rawKel = cols[1]?.replace(/['"]/g, '').trim().toUpperCase();
+      const rawKel = cols[1]?.replace(/['"]/g, '').trim();
       if (!date || !rawKel) continue;
 
-      const satgasMobilKg = Number(cols[2]?.replace(/['"]/g, '').trim()) || 0;
-      const satgasFukudaKg = Number(cols[3]?.replace(/['"]/g, '').trim()) || 0;
-      const totalKg = Number(cols[4]?.replace(/['"]/g, '').trim()) || (satgasMobilKg + satgasFukudaKg);
+      const satgasMobilKg = parseIndonesianNumber(cols[2]);
+      const satgasFukudaKg = parseIndonesianNumber(cols[3]);
+      const totalKg = parseIndonesianNumber(cols[4]) || (satgasMobilKg + satgasFukudaKg);
 
-      const matchedKel = validKelurahanIds.find((id) => rawKel.includes(id) || rawKel === id);
+      const matchedKel = findKelurahanId(rawKel);
       if (!matchedKel) continue;
 
       records.push({
@@ -783,21 +982,17 @@ export async function fetchResiduSheetsRecords(
         const json = await res.json();
         if (json && json.status === 'success' && Array.isArray(json.records) && json.records.length > 0) {
           const records: ResiduRecord[] = [];
-          const validKelurahanIds: KelurahanId[] = [
-            'BARU', 'BULOGADING', 'LAE-LAE', 'LAJANGIRU', 'LOSARI',
-            'MALOKU', 'MANGKURA', 'PISANG SELATAN', 'PISANG UTARA', 'SAWERIGADING',
-          ];
 
           for (const item of json.records) {
             const rawDate = item['Tanggal'] || item['tanggal'] || '';
-            const date = normalizeDateString(rawDate);
-            const rawKel = String(item['Kelurahan'] || item['kelurahan'] || '').trim().toUpperCase();
+            const date = normalizeDateString(String(rawDate));
+            const rawKel = String(item['Kelurahan'] || item['kelurahan'] || '').trim();
             if (!date || !rawKel) continue;
 
-            const matchedKel = validKelurahanIds.find((id) => rawKel.includes(id) || rawKel === id);
+            const matchedKel = findKelurahanId(rawKel);
             if (!matchedKel) continue;
 
-            const beratKg = Number(item['Berat_Residu_Kg'] || item['Berat_Kg']) || 0;
+            const beratKg = parseIndonesianNumber(item['Berat_Residu_Kg'] ?? item['Berat Residu Kg'] ?? item['Berat_Kg'] ?? item['Berat (Kg)']);
             const catatan = String(item['Lokasi_TPA'] || item['Catatan'] || '').trim();
 
             records.push({
@@ -826,31 +1021,19 @@ export async function fetchResiduSheetsRecords(
     if (lines.length < 2) return { success: true, records: [] };
 
     const records: ResiduRecord[] = [];
-    const validKelurahanIds: KelurahanId[] = [
-      'BARU',
-      'BULOGADING',
-      'LAE-LAE',
-      'LAJANGIRU',
-      'LOSARI',
-      'MALOKU',
-      'MANGKURA',
-      'PISANG SELATAN',
-      'PISANG UTARA',
-      'SAWERIGADING',
-    ];
 
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      if (cols.length < 3) continue;
+      if (cols.length < 2) continue;
       const rawDate = cols[0]?.replace(/['"]/g, '').trim();
       const date = normalizeDateString(rawDate);
-      const rawKel = cols[1]?.replace(/['"]/g, '').trim().toUpperCase();
+      const rawKel = cols[1]?.replace(/['"]/g, '').trim();
       if (!date || !rawKel) continue;
 
-      const beratKg = Number(cols[2]?.replace(/['"]/g, '').trim()) || 0;
+      const beratKg = parseIndonesianNumber(cols[2]);
       const catatan = cols[3]?.replace(/['"]/g, '').trim() || '';
 
-      const matchedKel = validKelurahanIds.find((id) => rawKel.includes(id) || rawKel === id);
+      const matchedKel = findKelurahanId(rawKel);
       if (!matchedKel) continue;
 
       records.push({
@@ -876,20 +1059,7 @@ export async function fetchHorekaSheetsRecords(
   spreadsheetId = DEFAULT_SPREADSHEET_ID,
   appsScriptUrl = DEFAULT_APPS_SCRIPT_URL
 ): Promise<{ success: boolean; records: HorekaDailyRecord[]; error?: string }> {
-  const validKelurahanIds: KelurahanId[] = [
-    'BARU',
-    'BULOGADING',
-    'LAE-LAE',
-    'LAJANGIRU',
-    'LOSARI',
-    'MALOKU',
-    'MANGKURA',
-    'PISANG SELATAN',
-    'PISANG UTARA',
-    'SAWERIGADING',
-  ];
-
-  // Strategy 1: Fetch via Google Apps Script Web App (bypasses Google Account cookie/CORS blocks in external Google Chrome)
+  // Strategy 1: Fetch via Google Apps Script Web App
   if (appsScriptUrl) {
     try {
       const apiUrl = `${appsScriptUrl}?action=getAll&sheet=DATA_HOREKA_147`;
@@ -901,18 +1071,17 @@ export async function fetchHorekaSheetsRecords(
 
           for (const item of json.records) {
             const rawDate = item['Tanggal'] || item['tanggal'] || item['Date'] || '';
-            const date = normalizeDateString(rawDate);
+            const date = normalizeDateString(String(rawDate));
             const namaUsaha = String(item['Nama_Usaha'] || item['nama_usaha'] || item['Nama Usaha'] || item['Nama'] || '').trim();
-            const kelurahanStr = String(item['Kelurahan'] || item['kelurahan'] || '').trim().toUpperCase();
+            const kelurahanStr = String(item['Kelurahan'] || item['kelurahan'] || '').trim();
             if (!date || !namaUsaha) continue;
 
-            const organikKg = Number(item['Organik_Kg'] || item['organik_kg'] || item['Organik'] || 0) || 0;
-            const anorganikKg = Number(item['Anorganik_Kg'] || item['anorganik_kg'] || item['Anorganik'] || 0) || 0;
-            const residuKg = Number(item['Residu_Kg'] || item['residu_kg'] || item['Residu'] || 0) || 0;
+            const organikKg = parseIndonesianNumber(item['Organik_Kg'] ?? item['Organik Kg'] ?? item['Organik']);
+            const anorganikKg = parseIndonesianNumber(item['Anorganik_Kg'] ?? item['Anorganik Kg'] ?? item['Anorganik']);
+            const residuKg = parseIndonesianNumber(item['Residu_Kg'] ?? item['Residu Kg'] ?? item['Residu']);
 
-            const matchedKel = validKelurahanIds.find((id) => kelurahanStr.includes(id) || kelurahanStr === id) || 'LOSARI';
+            const matchedKel = findKelurahanId(kelurahanStr) || 'LOSARI';
 
-            // Clean string matching for business
             const cleanTarget = namaUsaha.toLowerCase().replace(/[^a-z0-9]/g, '');
             const business = HOREKA_BUSINESSES.find((b) => {
               const cleanB = b.namaUsaha.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -955,18 +1124,18 @@ export async function fetchHorekaSheetsRecords(
 
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      if (cols.length < 8) continue;
+      if (cols.length < 4) continue;
       const rawDate = cols[1]?.replace(/['"]/g, '').trim();
       const date = normalizeDateString(rawDate);
       const namaUsaha = cols[2]?.replace(/['"]/g, '').trim();
-      const kelurahanStr = cols[3]?.replace(/['"]/g, '').trim().toUpperCase();
+      const kelurahanStr = cols[3]?.replace(/['"]/g, '').trim();
       if (!date || !namaUsaha) continue;
 
-      const organikKg = Number(cols[5]?.replace(/['"]/g, '').trim()) || 0;
-      const anorganikKg = Number(cols[6]?.replace(/['"]/g, '').trim()) || 0;
-      const residuKg = Number(cols[7]?.replace(/['"]/g, '').trim()) || 0;
+      const organikKg = parseIndonesianNumber(cols[5]);
+      const anorganikKg = parseIndonesianNumber(cols[6]);
+      const residuKg = parseIndonesianNumber(cols[7]);
 
-      const matchedKel = validKelurahanIds.find((id) => kelurahanStr.includes(id) || kelurahanStr === id) || 'LOSARI';
+      const matchedKel = findKelurahanId(kelurahanStr) || 'LOSARI';
 
       const cleanTarget = namaUsaha.toLowerCase().replace(/[^a-z0-9]/g, '');
       const business = HOREKA_BUSINESSES.find((b) => {

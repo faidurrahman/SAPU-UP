@@ -54,18 +54,22 @@ export const LoginPage: React.FC = () => {
 
       <div className="w-full max-w-md mx-auto my-auto relative z-10">
         {/* Civic Logo & Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-linear-to-tr from-emerald-600 to-teal-500 shadow-xl shadow-emerald-900/40 border border-emerald-400/30 text-white mb-3">
+        <div className="text-center mb-6 flex flex-col items-center">
+          {/* Logo ikon daun hijau dalam kotak hijau - tepat di atas tombol kapsul secara vertikal & centered */}
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-linear-to-tr from-emerald-600 to-teal-500 shadow-xl shadow-emerald-900/40 border border-emerald-400/30 text-white mb-2.5">
             <Leaf className="w-9 h-9 text-emerald-100" />
           </div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold tracking-wide uppercase mb-2">
+          {/* Tombol kapsul hijau KECAMATAN UJUNG PANDANG */}
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold tracking-wide uppercase mb-3">
             <Building2 className="w-3.5 h-3.5" />
             <span>Kecamatan Ujung Pandang</span>
           </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">
-            SAPU-UP MAKASSAR
+          {/* Judul besar tebal putih: SAPU-UP (kata MAKASSAR dihilangkan sepenuhnya) */}
+          <h1 className="text-3xl font-black text-white tracking-tight mb-1.5">
+            SAPU-UP
           </h1>
-          <p className="text-xs text-slate-300 mt-1 max-w-xs mx-auto leading-relaxed">
+          {/* Penyelarasan teks lurus di tengah (centered) di bawah teks SAPU-UP */}
+          <p className="text-xs text-slate-300 max-w-xs mx-auto leading-relaxed text-center">
             Sistem Aplikasi Persampahan Ujung Pandang
             <br />
             <span className="text-emerald-400 font-medium">

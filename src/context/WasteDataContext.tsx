@@ -295,7 +295,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [filter, setFilterState] = useState<FilterState>({
     month: '2026-10',
     startDate: '2026-10-01',
-    endDate: '2026-10-22',
+    endDate: '2026-10-31',
     kelurahanId: 'ALL',
   });
 
@@ -509,6 +509,17 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return [...prev, recordWithMeta];
     });
 
+    setFilterState((prev) => {
+      let newStart = prev.startDate;
+      let newEnd = prev.endDate;
+      if (newRecord.date > prev.endDate) newEnd = newRecord.date;
+      if (newRecord.date < prev.startDate) newStart = newRecord.date;
+      if (newStart !== prev.startDate || newEnd !== prev.endDate) {
+        return { ...prev, startDate: newStart, endDate: newEnd };
+      }
+      return prev;
+    });
+
     if (googleAppsScriptUrl) {
       setIsSavingToSheets(true);
       try {
@@ -583,6 +594,17 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return [...prev, newRecord];
     });
 
+    setFilterState((prev) => {
+      let newStart = prev.startDate;
+      let newEnd = prev.endDate;
+      if (record.date > prev.endDate) newEnd = record.date;
+      if (record.date < prev.startDate) newStart = record.date;
+      if (newStart !== prev.startDate || newEnd !== prev.endDate) {
+        return { ...prev, startDate: newStart, endDate: newEnd };
+      }
+      return prev;
+    });
+
     if (googleAppsScriptUrl) {
       setIsSavingToSheets(true);
       try {
@@ -644,6 +666,17 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return [...prev, newRecord];
     });
 
+    setFilterState((prev) => {
+      let newStart = prev.startDate;
+      let newEnd = prev.endDate;
+      if (record.date > prev.endDate) newEnd = record.date;
+      if (record.date < prev.startDate) newStart = record.date;
+      if (newStart !== prev.startDate || newEnd !== prev.endDate) {
+        return { ...prev, startDate: newStart, endDate: newEnd };
+      }
+      return prev;
+    });
+
     if (googleAppsScriptUrl) {
       setIsSavingToSheets(true);
       try {
@@ -681,6 +714,17 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return copy;
       }
       return [...prev, newRecord];
+    });
+
+    setFilterState((prev) => {
+      let newStart = prev.startDate;
+      let newEnd = prev.endDate;
+      if (record.date > prev.endDate) newEnd = record.date;
+      if (record.date < prev.startDate) newStart = record.date;
+      if (newStart !== prev.startDate || newEnd !== prev.endDate) {
+        return { ...prev, startDate: newStart, endDate: newEnd };
+      }
+      return prev;
     });
 
     const business = HOREKA_BUSINESSES.find((b) => b.id === record.horekaId);
@@ -729,7 +773,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setFilterState({
       month: '2026-10',
       startDate: '2026-10-01',
-      endDate: '2026-10-21',
+      endDate: '2026-10-31',
       kelurahanId: 'ALL',
     });
     setToastMessage('Data berhasil direset ke dataset resmi Oktober 2026.');
@@ -737,12 +781,13 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Matrix and total for Residu
   const residuMatrix = useMemo<ResiduKelurahanRow[]>(() => {
+    const monthPrefix = filter.startDate ? filter.startDate.substring(0, 7) : '2026-10';
     return INITIAL_RESIDU_MATRIX.map((base) => {
       const dailyKg: { [day: number]: number } = { ...base.dailyKg };
       let sum = 0;
-      for (let day = 1; day <= 30; day++) {
+      for (let day = 1; day <= 31; day++) {
         const dStr = day < 10 ? `0${day}` : `${day}`;
-        const dateKey = `2026-10-${dStr}`;
+        const dateKey = `${monthPrefix}-${dStr}`;
         const match = residuRecords.find((r) => r.kelurahanId === base.kelurahanId && r.date === dateKey);
         if (match) {
           dailyKg[day] = match.beratKg;
@@ -755,16 +800,17 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         totalKg: sum,
       };
     });
-  }, [residuRecords]);
+  }, [residuRecords, filter.startDate]);
 
   // Matrices for Anorganik (Satgas Mobil, Satgas Fukuda, Total Gabungan)
   const anorganikMobilMatrix = useMemo<AnorganikMatrixRow[]>(() => {
+    const monthPrefix = filter.startDate ? filter.startDate.substring(0, 7) : '2026-10';
     return INITIAL_ANORGANIK_MOBIL_MATRIX.map((base) => {
       const dailyKg: { [day: number]: number } = { ...base.dailyKg };
       let sum = 0;
-      for (let day = 1; day <= 30; day++) {
+      for (let day = 1; day <= 31; day++) {
         const dStr = day < 10 ? `0${day}` : `${day}`;
-        const dateKey = `2026-10-${dStr}`;
+        const dateKey = `${monthPrefix}-${dStr}`;
         const match = anorganikDailyRecords.find((r) => r.kelurahanId === base.kelurahanId && r.date === dateKey);
         if (match) {
           dailyKg[day] = match.satgasMobilKg ?? 0;
@@ -777,15 +823,16 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         totalKg: sum,
       };
     });
-  }, [anorganikDailyRecords]);
+  }, [anorganikDailyRecords, filter.startDate]);
 
   const anorganikFukudaMatrix = useMemo<AnorganikMatrixRow[]>(() => {
+    const monthPrefix = filter.startDate ? filter.startDate.substring(0, 7) : '2026-10';
     return INITIAL_ANORGANIK_FUKUDA_MATRIX.map((base) => {
       const dailyKg: { [day: number]: number } = { ...base.dailyKg };
       let sum = 0;
-      for (let day = 1; day <= 30; day++) {
+      for (let day = 1; day <= 31; day++) {
         const dStr = day < 10 ? `0${day}` : `${day}`;
-        const dateKey = `2026-10-${dStr}`;
+        const dateKey = `${monthPrefix}-${dStr}`;
         const match = anorganikDailyRecords.find((r) => r.kelurahanId === base.kelurahanId && r.date === dateKey);
         if (match) {
           dailyKg[day] = match.satgasFukudaKg ?? 0;
@@ -798,15 +845,16 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         totalKg: sum,
       };
     });
-  }, [anorganikDailyRecords]);
+  }, [anorganikDailyRecords, filter.startDate]);
 
   const anorganikGabunganMatrix = useMemo<AnorganikMatrixRow[]>(() => {
+    const monthPrefix = filter.startDate ? filter.startDate.substring(0, 7) : '2026-10';
     return INITIAL_ANORGANIK_GABUNGAN_MATRIX.map((base) => {
       const dailyKg: { [day: number]: number } = { ...base.dailyKg };
       let sum = 0;
-      for (let day = 1; day <= 30; day++) {
+      for (let day = 1; day <= 31; day++) {
         const dStr = day < 10 ? `0${day}` : `${day}`;
-        const dateKey = `2026-10-${dStr}`;
+        const dateKey = `${monthPrefix}-${dStr}`;
         const match = anorganikDailyRecords.find((r) => r.kelurahanId === base.kelurahanId && r.date === dateKey);
         if (match) {
           dailyKg[day] = match.totalKg ?? ((match.satgasMobilKg || 0) + (match.satgasFukudaKg || 0));
@@ -819,7 +867,7 @@ export const WasteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         totalKg: sum,
       };
     });
-  }, [anorganikDailyRecords]);
+  }, [anorganikDailyRecords, filter.startDate]);
 
   const totalResiduKg = useMemo(() => {
     let sum = 0;
